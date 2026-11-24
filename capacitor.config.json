@@ -1,0 +1,14 @@
+{
+  "appId": "com.chikoo.learnai",
+  "appName": "Chikoo - Learn AI",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
+  }
+}

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+.git/
+.github/
+.aistudio/
+*.log
+*.webm
+*.map
+coverage/
+.env*
+!.env.example

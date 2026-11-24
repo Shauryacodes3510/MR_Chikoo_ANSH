@@ -1,0 +1,881 @@
+# CHIKOO — LEADERBOARD UI REFACTORING MASTER PROMPT
+
+## Objective
+
+Refactor the existing **Leaderboard page UI** of the Chikoo application to closely match the provided visual reference.
+
+IMPORTANT: Use ONLY the **LEFT-HAND MOBILE SCREEN titled “Leaderboard”** in the reference image. Completely ignore the screen on the right, which shows a user profile page. Do not copy any profile-page components, profile statistics, match history, or profile navigation elements.
+
+The left screen is the complete visual reference for this task. Reproduce its design language, hierarchy, layout, proportions, spacing, colors, components, and visual effects while preserving the existing application's functionality and backend integration.
+
+This is a UI refactoring task, NOT a request to build a static image, a standalone mockup, or an unrelated new page.
+
+---
+
+# 1. OVERALL VISUAL DIRECTION
+
+The leaderboard should feel like a premium, playful, competitive mobile gaming interface.
+
+Design characteristics:
+- Rich purple and violet primary background.
+- Soft lavender surfaces and podium platforms.
+- Bright orange performance-highlight card.
+- White floating leaderboard list container.
+- Rounded corners throughout.
+- Friendly typography with bold, highly legible rankings.
+- Small circular player avatars with country flags.
+- A three-dimensional, layered leaderboard podium.
+- Subtle decorative curved lines in the background.
+- Strong visual hierarchy that directs attention to the top three players.
+- A polished, game-like interface rather than a traditional spreadsheet or social media list.
+
+The overall screen should feel energetic, modern, approachable, and competitive.
+
+Do not introduce a dark theme, excessive gradients, glassmorphism everywhere, large shadows, or unnecessary decorative elements that are not present in the reference.
+
+## Reference composition
+
+The reference screen is a tall mobile interface displayed on a pale pink presentation background. The pink background and surrounding decorative sparkles belong to the presentation mockup, NOT to the actual app interface.
+
+Implement the actual app screen with its purple background, white navigation elements, podium, and white leaderboard panel.
+
+The app viewport itself should not have a pink outer background.
+
+---
+
+# 2. SCREEN STRUCTURE
+
+Build the leaderboard in the following exact vertical order:
+
+1. Purple screen background and status bar.
+2. Header containing a back arrow and centered “Leaderboard” title.
+3. Weekly / All Time segmented control.
+4. Orange performance-highlight card.
+5. Small countdown timer pill.
+6. Three-player podium section.
+7. Floating white leaderboard list container.
+8. Ranked player rows inside the white container, continuing vertically as needed.
+
+All these sections belong to a SINGLE vertically composed mobile screen.
+
+The podium and ranked list must feel visually connected. The leaderboard list container overlaps the bottom area of the podium section, creating a layered, floating-card effect.
+
+Do not turn the podium into a separate page or put the player list on a completely separate screen.
+
+---
+
+# 3. BACKGROUND AND COLOR SYSTEM
+
+Use the following approximate colors sampled visually from the reference. Adjust slightly when needed to achieve a faithful match.
+
+| Element | Suggested color |
+|---|---|
+| Main screen background | `#6755E4` |
+| Dark purple segmented-control track | `#49399F` |
+| Selected segment | `#9386EC` |
+| Secondary purple accents | `#8173E8` |
+| Podium platform | `#9185E9` |
+| Podium highlight surface | `#B6ADF5` |
+| Main white surfaces | `#FFFFFF` |
+| Orange highlight card | `#FFB078` |
+| Dark primary text | `#25223A` |
+| Secondary text | `#77728F` |
+| White text on purple | `#FFFFFF` |
+
+These are starting values, not a reason to introduce a completely different palette.
+
+## Background decorations
+
+The purple background contains subtle, thin curved lines or orbital paths, most noticeable behind the podium and toward the lower-left side.
+
+Implement these as low-opacity decorative SVG paths or CSS elements.
+
+Requirements:
+- Thin strokes.
+- Slightly lighter or darker purple than the background.
+- Very low contrast.
+- No interference with player names or scores.
+- Positioned behind all interactive content.
+- No external image dependency required.
+
+These lines should make the background feel dynamic without cluttering the interface.
+
+---
+
+# 4. STATUS BAR AND HEADER
+
+## Status bar
+
+At the top of the screen, preserve the device status bar area.
+
+Display:
+- Time at the upper-left, such as “9:41”.
+- Cellular signal, Wi-Fi, and battery indicators on the upper-right.
+- White icons and text against the purple background.
+
+If the app already uses native system status-bar rendering, preserve that implementation. Do not draw fake system icons over the real status bar.
+
+Respect safe-area insets on iOS and Android.
+
+## Header layout
+
+Below the status bar, create a single horizontal header.
+
+### Back button
+
+- Positioned on the left.
+- Simple white left-facing arrow.
+- No large colored button background.
+- Approximately 20–24 px visual icon size.
+- Adequate touch target of approximately 44 × 44 px.
+- Returns to the previous screen using existing navigation logic.
+
+### Title
+
+Text: “Leaderboard”
+
+- Horizontally centered relative to the screen, not merely centered in the remaining space after the back button.
+- White text.
+- Approximately 21–23 px.
+- Semibold or bold.
+- Clean, rounded sans-serif typography.
+
+Do not add a profile icon, settings icon, search icon, or other header action.
+
+The header should feel minimal and balanced.
+
+---
+
+# 5. WEEKLY / ALL TIME SEGMENTED CONTROL
+
+Place a wide, pill-shaped segmented control below the header.
+
+## Dimensions and placement
+
+- Horizontal margin: approximately 20–24 px.
+- Width: nearly the full available content width.
+- Height: approximately 40 px.
+- Border radius: approximately 24 px.
+- Moderate vertical spacing above and below.
+
+## Track
+
+Use a dark purple background, approximately `#49399F`.
+
+The track contains two equal-width segments:
+
+1. Weekly
+2. All Time
+
+## Selected segment
+
+By default, “Weekly” is selected.
+
+The selected segment has:
+- A lighter lavender-purple pill background.
+- Fully rounded ends.
+- White, semibold text.
+- A subtle inset margin from the outer track.
+
+The selected segment should occupy approximately half the width of the track.
+
+The unselected “All Time” segment should have:
+- A transparent background.
+- White text at slightly reduced opacity.
+- The same font size and alignment.
+
+## Behavior
+
+This is a real functional control, not a decorative element.
+
+- Tapping “Weekly” displays weekly rankings.
+- Tapping “All Time” displays lifetime rankings.
+- The selected state updates immediately.
+- Fetch or derive the appropriate ranking data using the existing backend and data model.
+- Preserve the existing leaderboard functionality.
+- Prevent duplicate requests from rapid taps where appropriate.
+- Display an appropriate loading state without destroying the page layout.
+
+Do not hardcode different lists solely to imitate the screenshot.
+
+---
+
+# 6. ORANGE PERFORMANCE-HIGHLIGHT CARD
+
+Directly below the segmented control, create a wide orange rounded rectangle.
+
+This is one of the most visually prominent elements on the screen.
+
+## Layout
+
+- Horizontal margin: approximately 20–24 px.
+- Height: approximately 76–80 px.
+- Border radius: approximately 18–20 px.
+- Background: warm peach-orange, approximately `#FFB078`.
+- No heavy border.
+- Minimal or very soft shadow, if needed.
+
+Inside the card, arrange two elements horizontally.
+
+### Left: rank badge
+
+Create a smaller rounded-square badge.
+
+- Approximate size: 48 × 48 px.
+- Background: a slightly deeper orange, approximately `#FF9A55`.
+- Rounded corners: approximately 15 px.
+- Centered white text.
+- Large bold rank text, such as “#4”.
+
+The rank should be dynamically populated using the current user's actual ranking.
+
+Example: `#4`
+
+Do not hardcode rank 4.
+
+### Right: motivational message
+
+Text in the reference:
+
+“You are doing better than
+60% of other players!”
+
+Use a two-line layout on typical mobile widths.
+
+Typography:
+- White.
+- Approximately 13–14 px.
+- Semibold or bold.
+- Left aligned.
+- Line height approximately 18–20 px.
+
+The percentile must be calculated from actual leaderboard data when possible.
+
+For example:
+- Current user rank: 4.
+- Total eligible players: 10.
+- Percentile calculation should be consistent with the product's ranking convention.
+
+Do not simply hardcode “60%”.
+
+If ranking or percentile information is unavailable, show an appropriate loading placeholder or neutral message rather than fabricated statistics.
+
+---
+
+# 7. PODIUM SECTION
+
+This is the centerpiece of the leaderboard.
+
+Create a visually layered, three-dimensional podium displaying the top three ranked players.
+
+The podium occupies the middle section of the screen between the orange highlight card and the white leaderboard list.
+
+It must look like a playful game leaderboard rather than three flat rectangles.
+
+## Podium arrangement
+
+The three podium positions are arranged horizontally:
+
+- Second place on the left.
+- First place in the center.
+- Third place on the right.
+
+The center first-place platform is taller than the other two.
+
+The second-place platform is medium height.
+
+The third-place platform is the shortest.
+
+Use a responsive layout that keeps all three podiums within the available screen width.
+
+## 7.1 First-place podium
+
+Position this in the horizontal center.
+
+This is the tallest and most prominent podium.
+
+### Platform
+
+- Wide rectangular pedestal.
+- Lavender-purple face.
+- Approximate color: `#9185E9`.
+- Lighter lavender top surface.
+- Slightly beveled or angled top edges to create a dimensional appearance.
+- Soft tonal differences between the front face, top, and side surfaces.
+- Large white numeral “1” centered on the front.
+
+The podium should look like a simple stylized 3D stage.
+
+Use CSS polygons, pseudo-elements, or SVG shapes to create the angled top. Avoid external images.
+
+### Crown
+
+Place a small yellow-gold crown above the first-place avatar.
+
+- Gold/yellow color, approximately `#FFD54F`.
+- Positioned above the avatar's head.
+- Approximately 28–32 px wide.
+- Slightly separated from the avatar.
+- Use an existing crown icon or a simple inline SVG.
+
+The crown must be visually distinct and must appear only for first place unless the product's existing ranking rules explicitly indicate otherwise.
+
+### Avatar
+
+Position a circular player avatar above the podium platform.
+
+- Approximately 48–56 px.
+- Circular crop.
+- Centered on the podium.
+- Slight overlap with the upper area of the pedestal.
+- Thin white outline if needed for separation.
+
+The first-place avatar is the focal point of the entire podium.
+
+### Player name
+
+Below the avatar, show the winner's name.
+
+Example from the reference: “Davis Curtis”.
+
+This is sample content only. Use the actual first-ranked player from the selected leaderboard.
+
+- White text.
+- Approximately 13–14 px.
+- Semibold.
+- Centered.
+- Single line where possible.
+- Ellipsis for long names.
+
+### Country flag
+
+Display the player's country flag near the avatar, as shown in the reference.
+
+Use a small flag badge around 18–22 px.
+
+The reference shows the Indian flag near the current user's avatar on the list and various country flags beside podium avatars. Each flag must reflect the relevant player's country, not be randomly assigned.
+
+### Score pill
+
+Below the player name, show the player's points inside a small rounded pill.
+
+Example: `2,569 QP`
+
+- Background: slightly lighter or darker translucent purple.
+- White text.
+- Approximately 11–12 px.
+- Fully rounded corners.
+- Compact horizontal padding.
+
+The score must be dynamically populated.
+
+### Countdown timer
+
+The reference includes a small dark purple pill positioned toward the upper-right area of the podium.
+
+Its text is approximately:
+
+`◷ 06d 23h 00m`
+
+Implement a compact countdown chip with:
+- Dark purple background.
+- Fully rounded ends.
+- Small clock icon.
+- White or near-white text.
+- Approximately 10–11 px typography.
+- Horizontal padding of around 10 px.
+- Height of approximately 28–30 px.
+
+The timer indicates the time remaining in the active weekly leaderboard period.
+
+Calculate it from the actual weekly reset schedule. Update it accurately.
+
+Do not use a hardcoded countdown.
+
+If the app does not yet define a weekly reset schedule, inspect the existing ranking logic before introducing one.
+
+## 7.2 Second-place podium
+
+Position this to the left of the first-place pedestal.
+
+### Platform
+
+- Shorter than first place.
+- Approximately 75–85% of the first-place platform's height.
+- Lavender front face.
+- Lighter angled top surface.
+- Large white numeral “2”.
+- Centered horizontally.
+
+### Avatar and details
+
+Above the platform:
+- Circular avatar.
+- Country flag badge.
+- Player name below the avatar.
+- Rounded points pill beneath the name.
+
+Example reference values:
+- Name: “Alena Donin”
+- Score: `1,469 QP`
+
+These values are placeholders from the reference, not permanent content.
+
+The avatar and name should align visually with the second-place platform.
+
+Use smaller or equal avatar sizing compared with first place to preserve the hierarchy.
+
+## 7.3 Third-place podium
+
+Position this to the right of first place.
+
+### Platform
+
+- Shortest of the three.
+- Approximately 65–75% of the first-place platform's height.
+- Lavender front face.
+- Light lavender angled top.
+- Large white numeral “3”.
+
+### Avatar and details
+
+Above the platform:
+- Circular avatar.
+- Country flag badge.
+- Player name.
+- Points pill.
+
+Example reference values:
+- Name: “Craig Gouse”
+- Score: `1,053 QP`
+
+Again, use real data rather than hardcoding these values.
+
+## 7.4 Podium geometry and layering
+
+The podium must have a coherent three-dimensional appearance.
+
+Use:
+- Distinct platform heights.
+- Angled top faces.
+- Slight tonal variation between front and top surfaces.
+- Soft shadowing where the platforms meet the background.
+- Large, centered rank numerals.
+- Carefully controlled overlap between avatar, player details, and pedestal.
+
+The center pedestal should visually dominate the composition.
+
+Do not create three identical cards with rank numbers. This would lose the defining visual character of the reference.
+
+---
+
+# 8. FLOATING WHITE LEADERBOARD CONTAINER
+
+The lower part of the screen contains a large white panel that overlaps the bottom portion of the podium.
+
+This container holds the remaining ranked players and the current user's row when applicable.
+
+## Container styling
+
+- White background.
+- Large rounded top corners, approximately 28–32 px.
+- Rounded lower corners where the container naturally ends.
+- No heavy border.
+- Very soft shadow to separate it from the purple background.
+- Full-width or nearly full-width within the screen.
+- Horizontal margins of approximately 8–12 px.
+- Positioned near the lower portion of the podium.
+
+The container should feel like a white sheet floating over the purple background.
+
+## Positioning
+
+The white panel should overlap the lower section of the podium.
+
+Use a deliberate layout strategy:
+- A podium wrapper with reserved height.
+- A list container that overlaps the podium wrapper by a controlled amount.
+- A higher stacking order for the white list panel.
+
+Avoid arbitrary absolute positioning that causes the podium to break on different screen sizes.
+
+On short screens, allow vertical scrolling while preserving the intended overlap.
+
+The panel's content must not be clipped by the screen viewport.
+
+---
+
+# 9. PLAYER ROWS INSIDE THE WHITE PANEL
+
+Each leaderboard entry is displayed as a rounded white or very lightly tinted row.
+
+The first visible row in the reference represents the current user, ranked fourth.
+
+## Row layout
+
+Each row contains these elements in a single horizontal arrangement:
+
+1. Rank number in a small circular badge.
+2. Circular player avatar.
+3. Player name and score stacked vertically.
+4. Optional flag near the avatar or name, following the existing data design.
+
+### Rank badge
+
+- Small circle, approximately 20–22 px.
+- White or very light gray background.
+- Thin light-gray outline.
+- Small muted gray rank numeral.
+- Approximately 10–11 px text.
+
+Example: `4`
+
+For other positions, display the appropriate actual rank.
+
+Do not use a large colored rank block for ordinary players.
+
+### Avatar
+
+- Approximately 40–44 px circular image.
+- Consistent size across all rows.
+- Proper image cropping.
+- No stretching or distortion.
+- Optional small flag badge overlapping the avatar's lower-right edge.
+
+The avatar should be clearly visible but less prominent than podium avatars.
+
+### Player name
+
+Example: “Madelyn Dias”
+
+- Dark near-black text.
+- Approximately 14–15 px.
+- Semibold or bold.
+- Left aligned.
+- One line where possible.
+- Ellipsis for names that exceed the available width.
+
+### Score
+
+Example: `590 points`
+
+- Muted gray or lavender-gray text.
+- Approximately 11–12 px.
+- Displayed immediately below the player name.
+- Smaller and less prominent than the name.
+
+Use the application's actual points terminology if it differs from the reference.
+
+## Current-user row
+
+The current user's row may have a very subtle lavender background or border to distinguish it.
+
+The screenshot uses a clean white row with a circular rank indicator.
+
+Avoid excessive highlighting.
+
+If the current user appears at rank four, show the current user's actual rank and score. Do not assume every user is ranked fourth.
+
+## Row spacing
+
+- Approximately 12–14 px horizontal padding.
+- Approximately 12–16 px vertical padding.
+- Approximately 12–14 px gap between the rank badge and avatar.
+- Approximately 10–12 px gap between the avatar and text.
+- Comfortable vertical separation between rows.
+
+Use consistent alignment across every entry.
+
+Do not draw heavy dividers between rows. Use whitespace and subtle backgrounds instead.
+
+---
+
+# 10. SCROLLING AND RESPONSIVE BEHAVIOR
+
+The design is primarily mobile-first.
+
+The reference uses a narrow portrait viewport, so the layout must prioritize phone screens.
+
+## Mobile behavior
+
+- Keep the header visible at the top of the page.
+- Keep the segmented control and highlight card in their intended positions within the page layout.
+- Allow the leaderboard content to scroll vertically.
+- Preserve the podium's three-column layout.
+- Keep player names, flags, avatars, and scores legible.
+- Prevent horizontal scrolling.
+- Respect safe areas.
+- Avoid overlapping the status bar or bottom navigation of the host application.
+
+Do not shrink the entire UI proportionally to fit a short screen.
+
+Instead, allow the page to scroll vertically when needed.
+
+## Different screen sizes
+
+On smaller screens:
+- Reduce horizontal padding slightly.
+- Reduce podium avatar size modestly if necessary.
+- Allow names to wrap or truncate.
+- Keep the center podium visually dominant.
+- Ensure that the three platforms remain distinct.
+
+On larger screens:
+- Do not stretch every element across the full screen.
+- Constrain the leaderboard to a reasonable maximum width.
+- Preserve the original visual proportions.
+- Center the interface where appropriate.
+
+The page should remain visually balanced on common iOS and Android viewport sizes.
+
+---
+
+# 11. DATA AND BACKEND INTEGRATION
+
+The leaderboard is a real application feature.
+
+Preserve the existing Supabase integration and the existing ranking system.
+
+Do not replace the real backend with static sample data.
+
+Before modifying the implementation, inspect:
+- The existing leaderboard page and components.
+- Existing ranking queries.
+- The profile and user ID relationships.
+- The points or QP field.
+- Weekly and lifetime ranking logic.
+- Country and avatar fields.
+- The weekly reset schedule.
+- Existing loading, error, and empty states.
+- Existing RLS policies and permissions.
+
+Use the real application data for:
+- Player rankings.
+- Player names.
+- Player avatars.
+- Country flags.
+- Scores.
+- Current user's rank.
+- Percentile comparison.
+- Weekly countdown.
+
+## Data correctness
+
+Sort rankings using the existing authoritative ranking rules.
+
+Ensure that:
+- Weekly rankings use the correct weekly period.
+- All Time rankings use the correct cumulative score.
+- Ties are handled consistently.
+- The current user is identified by their authenticated user ID.
+- The top three players match the ranking results.
+- The remaining list begins at the correct rank.
+- The percentile message uses actual data.
+- Missing avatars and country information have graceful fallbacks.
+
+Do not invent rankings, points, country flags, or player identities.
+
+## Supabase permissions
+
+The existing `profiles` table has multiple overlapping RLS policies.
+
+Do not modify database permissions or remove policies as part of this UI refactor unless an actual data-access failure is confirmed and separately diagnosed.
+
+Do not disable RLS.
+
+If the leaderboard data query already works, preserve it and focus on presentation.
+
+If the query fails, report the exact database error separately from the UI work.
+
+---
+
+# 12. COMPONENT ARCHITECTURE
+
+Refactor the existing implementation into reusable components where appropriate.
+
+Suggested component structure:
+
+- `LeaderboardPage`
+- `LeaderboardHeader`
+- `LeaderboardPeriodSelector`
+- `LeaderboardPerformanceCard`
+- `LeaderboardPodium`
+- `PodiumPlayer`
+- `PodiumPlatform`
+- `WeeklyCountdown`
+- `LeaderboardList`
+- `LeaderboardRow`
+- `PlayerAvatar`
+- `CountryFlag`
+
+These are suggested names, not mandatory names. Reuse existing components if the codebase already contains equivalent implementations.
+
+Avoid creating unnecessary abstractions or duplicating existing components.
+
+Keep data fetching and business logic separate from presentation where practical.
+
+Preserve the application's existing framework, styling conventions, routing, and component library.
+
+Do not migrate frameworks or introduce a new UI library merely to achieve this design.
+
+---
+
+# 13. ICONS, FONTS, AND ASSETS
+
+Use the application's existing typography and icon system when possible.
+
+Preferred icon styles:
+- Simple left-facing back arrow.
+- Small clock icon for the weekly countdown.
+- Gold crown for first place.
+
+Use vector icons or inline SVG for crisp rendering.
+
+Do not use emoji as a substitute for the crown, clock, or navigation arrow unless the existing product deliberately uses emoji.
+
+For player avatars:
+- Reuse existing profile image URLs.
+- Apply circular clipping.
+- Use a consistent fallback avatar when no image exists.
+
+For country flags:
+- Use actual country data already associated with the user.
+- Reuse the existing flag asset or component if available.
+
+Do not introduce external image dependencies just to reproduce the screenshot.
+
+---
+
+# 14. ANIMATION AND INTERACTION
+
+Keep animations subtle and performance-friendly.
+
+Appropriate optional interactions:
+- A short, gentle fade or slide when the leaderboard loads.
+- A small transition when switching between Weekly and All Time.
+- A subtle selected-segment transition.
+- A restrained visual entrance for the podium.
+
+Avoid:
+- Continuous animated particles.
+- Heavy blur filters.
+- Excessive bouncing.
+- Large parallax effects.
+- Expensive looping animations.
+- Repeated network requests triggered by animations.
+
+The interface should remain smooth on mid-range Android phones.
+
+Prioritize fast initial rendering and responsive interactions.
+
+Respect reduced-motion preferences where supported.
+
+---
+
+# 15. ACCESSIBILITY AND USABILITY
+
+Ensure:
+- Adequate contrast for white text on purple and orange surfaces.
+- Readable scores and player names.
+- Accessible labels for the back button and segmented control.
+- Keyboard and screen-reader support where applicable.
+- Touch targets of approximately 44 × 44 px for interactive controls.
+- No essential information communicated only by color.
+- Stable layout while images load.
+
+The visual design must not compromise usability.
+
+---
+
+# 16. IMPLEMENTATION CONSTRAINTS
+
+Before writing code:
+
+1. Locate the existing Leaderboard page.
+2. Identify the current component structure.
+3. Identify the data source and ranking query.
+4. Identify the application's current styling system.
+5. Identify the current routing and navigation behavior.
+6. Identify which parts can be reused.
+7. Refactor the existing implementation rather than creating a disconnected duplicate.
+
+During implementation:
+
+- Preserve all existing leaderboard functionality.
+- Preserve the authentication flow.
+- Preserve Supabase queries and data relationships.
+- Preserve the current user's identity and permissions.
+- Preserve working weekly and all-time ranking behavior.
+- Do not hardcode sample players into production.
+- Do not modify unrelated pages.
+- Do not alter the profile page.
+- Do not modify the database schema unless absolutely necessary and explicitly justified.
+- Avoid introducing new dependencies without a clear need.
+- Keep the implementation type-safe if the project uses TypeScript.
+
+If a required data field is missing, document it and use a safe fallback instead of inventing data.
+
+---
+
+# 17. ACCEPTANCE CRITERIA
+
+The refactor is complete only when all the following conditions are met.
+
+### Visual fidelity
+- [ ] Purple background closely matches the reference.
+- [ ] Header has a white back arrow and centered Leaderboard title.
+- [ ] Weekly / All Time selector matches the pill-shaped design.
+- [ ] Orange performance card includes a rank badge and two-line message.
+- [ ] Three podiums appear in the correct left-center-right order.
+- [ ] First place is tallest and has a gold crown.
+- [ ] Player avatars, names, flags, and scores are aligned correctly.
+- [ ] Weekly countdown appears in a compact dark purple pill.
+- [ ] White leaderboard panel overlaps the podium naturally.
+- [ ] Ranked rows use circular avatars and compact rank badges.
+- [ ] Typography, spacing, and rounded corners match the visual reference.
+- [ ] The pink presentation background and the right-hand profile screen are not implemented inside the app.
+
+### Functional correctness
+- [ ] Weekly selection loads weekly rankings.
+- [ ] All Time selection loads lifetime rankings.
+- [ ] Rankings and scores use real data.
+- [ ] The current user's rank is accurate.
+- [ ] The percentile is data-driven.
+- [ ] The countdown reflects the actual reset schedule.
+- [ ] The back button works.
+- [ ] Loading, empty, and error states are handled.
+- [ ] No new Supabase permission errors are introduced.
+
+### Engineering quality
+- [ ] The existing project architecture is preserved.
+- [ ] No unrelated screens are changed.
+- [ ] No unnecessary database or RLS changes are made.
+- [ ] No hardcoded production leaderboard data is introduced.
+- [ ] No horizontal overflow occurs on mobile.
+- [ ] The UI remains smooth and responsive.
+- [ ] The application builds successfully.
+- [ ] The refactored page is tested at mobile viewport sizes.
+
+---
+
+# FINAL INSTRUCTION
+
+Implement the refactor directly in the existing Chikoo codebase.
+
+Use the left-hand leaderboard screenshot as the visual source of truth. Treat all names, scores, ranks, and flags shown in the screenshot as illustrative examples, not production data.
+
+Prioritize the correct visual hierarchy:
+
+**Purple background → header → period selector → orange performance card → three-player podium → overlapping white ranked-player list.**
+
+Do not modify or recreate the profile screen on the right.
+
+When finished, summarize:
+1. Which files were modified.
+2. Which components were created or reused.
+3. What visual changes were implemented.
+4. How existing data and ranking logic were preserved.
+5. Which tests or build checks passed.
+6. Any remaining limitations or missing data fields.
+
+Do not claim completion until the actual application has been built and the refactored Leaderboard page has been verified.

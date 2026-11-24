@@ -1,0 +1,8 @@
+{
+  "name": "MR Chikoo - [ ansh ]",
+  "description": "An interactive, Duolingo-inspired platform teaching AI concepts to students through a do-it-and-learn approach.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

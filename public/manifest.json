@@ -1,0 +1,79 @@
+{
+  "id": "com.mrchikoo.learn.twa",
+  "name": "Chikoo - Learn AI",
+  "short_name": "Chikoo",
+  "description": "Gamified AI Learning Adventures for Kids and Students",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "orientation": "portrait",
+  "categories": [
+    "education",
+    "kids",
+    "games"
+  ],
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "https://i.postimg.cc/bNYNMwz8/avatar-removebg-preview.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://i.postimg.cc/bNYNMwz8/avatar-removebg-preview.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Practice Arena",
+      "short_name": "Practice",
+      "description": "Play speed AI battles and solve logic puzzles",
+      "url": "/?tab=practice",
+      "icons": [
+        {
+          "src": "https://i.postimg.cc/bNYNMwz8/avatar-removebg-preview.png",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "AI Quests",
+      "short_name": "Quests",
+      "description": "Daily learning challenges and streak rewards",
+      "url": "/?tab=quests",
+      "icons": [
+        {
+          "src": "https://i.postimg.cc/bNYNMwz8/avatar-removebg-preview.png",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Spin & Rewards",
+      "short_name": "Rewards",
+      "description": "Claim cookies, avatars, and spin the wheel",
+      "url": "/?tab=rewards",
+      "icons": [
+        {
+          "src": "https://i.postimg.cc/bNYNMwz8/avatar-removebg-preview.png",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

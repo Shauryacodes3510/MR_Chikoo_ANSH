@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.learn.chikoo",
+      "sha256_cert_fingerprints": [
+        "8D:87:03:5E:9E:46:F2:9B:62:CA:AC:4B:C0:96:DA:4E:2D:9C:17:4C:7C:58:61:A9:69:0A:80:04:87:35:D5:B0"
+      ]
+    }
+  }
+]

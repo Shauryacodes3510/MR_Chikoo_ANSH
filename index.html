@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Chikoo - Learn AI</title>
+    <meta name="description" content="Gamified AI Learning Adventures for Kids and Students" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Chikoo" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/webp" href="/avatar.webp" />
+    <link rel="apple-touch-icon" href="/avatar.webp" />
+    <meta property="og:title" content="Chikoo - Learn AI" />
+    <meta property="og:description" content="Gamified AI Learning Adventures for Kids and Students" />
+    <meta property="og:image" content="/splash_screen.webp" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preload" as="image" href="/splash_screen.webp" type="image/webp" fetchpriority="high" />
+    <link rel="preload" as="image" href="/bg_image.webp" type="image/webp" />
+    <link rel="preload" as="image" href="/unit2_bg_image.webp" type="image/webp" />
+    <link rel="preload" as="image" href="/unit3_bg_image.webp" type="image/webp" />
+    <link rel="preload" as="image" href="/unit4_bg_image.webp" type="image/webp" />
+    <link rel="preload" as="image" href="/unit5_bg_image.webp" type="image/webp" />
+    <link rel="preload" as="image" href="/unit6_bg_image.webp" type="image/webp" />
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=Nunito:wght@600;700;800&amp;display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=Nunito:wght@600;700;800&amp;display=swap" media="print" onload="this.media='all'" />
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=Nunito:wght@600;700;800&amp;display=swap" />
+    </noscript>
+    <script>
+      try {
+        if (localStorage.getItem('CHIKOO_THEME_MODE') === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {}
+    </script>
+    <style>
+      body, html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        min-height: 100dvh;
+        background-color: #ffffff;
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+        overflow-x: hidden;
+      }
+      html.dark, html.dark body {
+        background-color: #0b0f19;
+        color: #f1f5f9;
+        color-scheme: dark;
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+        min-height: 100dvh;
+        background-color: #ffffff;
+      }
+      html.dark #root {
+        background-color: #0b0f19;
+      }
+      .app-shell-splash {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: #ffffff;
+        z-index: 999999;
+      }
+      html.dark .app-shell-splash {
+        background-color: #0b0f19;
+      }
+      .app-shell-splash img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="app-shell-splash">
+        <img src="/splash_screen.webp" alt="Loading Aibo" />
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
