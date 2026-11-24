@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flame, Wifi, WifiOff } from 'lucide-react';
+import { Flame, Wifi, WifiOff, Heart } from 'lucide-react';
 import { LanguageSelector } from './LanguageSelector';
 import { World, UserWorldProgress } from '../lib/supabase';
 import { soundManager } from '../lib/sounds';
@@ -13,6 +13,7 @@ interface TopStatusBarProps {
   streak: number;
   gems: number; // cookies
   energy?: number; // lives
+  onRefillRequest?: () => void;
   selectedAvatarId?: string;
   onProfileClick?: () => void;
   className?: string;
@@ -201,6 +202,8 @@ function ResourceHUDItem({
 function TopStatusBar({
   streak,
   gems,
+  energy = 25,
+  onRefillRequest,
   className = "",
   worlds,
   selectedWorldId,
@@ -313,6 +316,27 @@ function TopStatusBar({
             colorClass="text-amber-600 dark:text-amber-400"
             sparkleColor="text-yellow-400"
           />
+
+          {/* Delicate Vertical Separator */}
+          <div className="h-4.5 w-[1.5px] bg-slate-200/45 dark:bg-white/10 self-center rounded-full" />
+
+          {/* 4. Hearts / Lives Item (Hearts - Rose) */}
+          <div 
+            onClick={() => onRefillRequest?.()}
+            className="cursor-pointer active:scale-95 transition-transform"
+            title="Hearts (Tap to Refill)"
+          >
+            <ResourceHUDItem 
+              id="tour-hearts"
+              icon={
+                <Heart size={16} className="fill-rose-500 text-rose-500" />
+              }
+              value={Math.min(5, Math.ceil(energy / 5))}
+              label={t('header.hearts', 'Hearts')}
+              colorClass="text-rose-500 dark:text-rose-400"
+              sparkleColor="text-rose-400"
+            />
+          </div>
 
           {/* Delicate Vertical Separator */}
           <div className="h-4.5 w-[1.5px] bg-slate-200/45 dark:bg-white/10 self-center rounded-full" />

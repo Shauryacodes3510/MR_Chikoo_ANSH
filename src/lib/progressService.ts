@@ -229,7 +229,7 @@ class ProgressService {
           weekly_xp: 0,
           gems: 0,
           streak: 0,
-          energy: 50,
+          energy: 25,
           accuracy: 1.0,
           avatar_id: 'user',
           theme_id: 'blue',

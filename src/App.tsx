@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense, startTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, Star, Award, Home, BarChart2, User, CheckCircle2, Target, Settings2, Palette, Image as ImageIcon, ChevronRight, Zap, Diamond, Sparkles, Brain, Lock, LogOut, Gift, Building2 } from 'lucide-react';
+import { Trophy, Star, Award, Home, BarChart2, User, CheckCircle2, Target, Settings2, Palette, Image as ImageIcon, ChevronRight, Zap, Diamond, Sparkles, Brain, Lock, LogOut, Gift, Building2, Heart } from 'lucide-react';
 import { SchoolProvider, useSchool } from './features/student/context/SchoolContext';
 import { NavigationProvider } from './features/student/context/NavigationContext';
 import { LessonProvider } from './features/student/context/LessonContext';
@@ -1884,8 +1884,8 @@ function AppContent() {
   }, [energy, adventureModules, completedLessons, openLessonWithPreload, challengePacks, sessionUser, saveProfileUpdates, triggerCelebration]);
 
   const handleRestoreEnergy = useCallback((amount: number, streakCount: number) => {
-    // Duolingo Energy: 5 in a row gives 1-5 energy
-    const bonus = Math.max(1, amount);
+    // 5 in a row gives 1 full heart (5 energy units out of 25)
+    const bonus = Math.max(5, amount);
     startTransition(() => {
       setEnergy(prev => {
         const nextEnergy = Math.min(MAX_ENERGY, prev + bonus);
@@ -1898,17 +1898,17 @@ function AppContent() {
         return nextEnergy;
       });
       
-      // Section 5: Streak Bonus: +5 Gems for every 5 correct answers
+      // Streak Bonus: +5 Cookies & +1 Heart for every 5 correct answers in a row
       if (streakCount % 5 === 0) {
         setXp(prev => prev + 5);
         setGems(prev => prev + 5);
         setChargingAnimation({ 
-          text: `${streakCount} Streak! +5 Cookies & Energy`, 
+          text: `${streakCount} Streak! +5 Cookies & +1 Heart ❤️`, 
           id: Date.now() 
         });
       } else {
         setChargingAnimation({ 
-          text: `Streak Bonus! +${bonus} Energy`, 
+          text: `Streak Bonus! +1 Heart ❤️`, 
           id: Date.now() 
         });
       }
@@ -1940,15 +1940,18 @@ function AppContent() {
     }
 
     if (!isCorrect) {
-      // Section 5: Each incorrect answer costs 1 unit of the 5-charge limit
+      // 1 mistake = 1 heart lost (5 units out of 25 max energy)
       startTransition(() => {
         setEnergy(prev => {
-          const nextEnergy = Math.max(0, prev - 1);
+          const nextEnergy = Math.max(0, prev - 5);
           if (sessionUser) {
             saveProfileUpdates({ energy: nextEnergy });
             try {
               localStorage.setItem(`CHIKOO_ENERGY_${sessionUser.toLowerCase().trim()}`, String(nextEnergy));
             } catch (_) {}
+          }
+          if (nextEnergy <= 0) {
+            setShowEnergyRefillModal(true);
           }
           return nextEnergy;
         });
@@ -2918,6 +2921,7 @@ function AppContent() {
                       handleQuestionAnswered(correct);
                     }
                   }}
+                  onRefillEnergy={() => setShowEnergyRefillModal(true)}
                   energy={energy}
                   nextEnergyIn={nextEnergyIn}
                 />
@@ -3206,6 +3210,7 @@ function AppContent() {
           onClaimChest={handleClaimDailyChest}
           setView={setView}
           onOpenCookieWheel={() => setShowCookieWheelModal(true)}
+          onRefillEnergy={() => setShowEnergyRefillModal(true)}
           className="hidden lg:flex lg:w-[320px] xl:w-[360px] shrink-0"
         />
       )}
@@ -3256,7 +3261,7 @@ function AppContent() {
         )}
       </AnimatePresence>
 
-      {/* Energy Refill Modal */}
+      {/* Energy / Hearts Refill Modal */}
       <AnimatePresence>
         {showEnergyRefillModal && (
           <motion.div
@@ -3264,25 +3269,32 @@ function AppContent() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[650] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
-            onClick={() => setShowEnergyRefillModal(false)}
+            onClick={() => {
+              setShowEnergyRefillModal(false);
+              if (activeLesson && energy <= 0) {
+                setActiveLesson(null);
+                setLoadingLesson(null);
+                setView('home');
+              }
+            }}
           >
             <motion.div
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="relative max-w-md w-full bg-slate-900 border-2 border-amber-400/40 rounded-3xl p-6 text-center text-white shadow-2xl overflow-hidden"
+              className="relative max-w-md w-full bg-slate-900 border-2 border-rose-500/40 rounded-3xl p-6 text-center text-white shadow-2xl overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-3xl shadow-inner">
-                ⚡
+              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-rose-500/20 border border-rose-400/30 flex items-center justify-center text-3xl shadow-inner">
+                ❤️
               </div>
 
-              <h3 className="text-2xl font-black text-amber-300 tracking-wide mb-2">
-                Energy Exhausted!
+              <h3 className="text-2xl font-black text-rose-300 tracking-wide mb-2">
+                Out of Hearts!
               </h3>
               <p className="text-sm text-slate-300 leading-relaxed mb-6 font-medium">
-                Your explorer suit battery is currently empty (<span className="text-amber-400 font-bold">0 / {MAX_ENERGY} ⚡</span>).
-                Recharge your energy to continue discovering new universe stages!
+                You ran out of hearts (<span className="text-rose-400 font-bold">{Math.min(5, Math.ceil(energy / 5))} / 5 ❤️</span>)!
+                Refill your hearts with cookies to continue learning, or review completed lessons for free!
               </p>
 
               <div className="space-y-3">
@@ -3290,15 +3302,19 @@ function AppContent() {
                   onClick={() => {
                     refillEnergy();
                   }}
-                  className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black text-base shadow-lg shadow-amber-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-400 hover:to-amber-400 text-white font-black text-base shadow-lg shadow-rose-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Zap className="w-5 h-5 fill-slate-950" />
-                  <span>Full Recharge to {MAX_ENERGY} Energy</span>
+                  <Heart className="w-5 h-5 fill-white" />
+                  <span>Refill Hearts (500 Cookies)</span>
                 </button>
 
                 <button
                   onClick={() => {
                     setShowEnergyRefillModal(false);
+                    if (activeLesson) {
+                      setActiveLesson(null);
+                      setLoadingLesson(null);
+                    }
                     setView('home');
                   }}
                   className="w-full py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-700/80 text-slate-200 font-bold text-sm border border-slate-700 active:scale-98 transition-all cursor-pointer"
@@ -3308,10 +3324,17 @@ function AppContent() {
               </div>
 
               <button
-                onClick={() => setShowEnergyRefillModal(false)}
+                onClick={() => {
+                  setShowEnergyRefillModal(false);
+                  if (activeLesson && energy <= 0) {
+                    setActiveLesson(null);
+                    setLoadingLesson(null);
+                    setView('home');
+                  }
+                }}
                 className="mt-4 text-xs font-bold text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
               >
-                Close Window
+                {activeLesson && energy <= 0 ? 'Quit Lesson' : 'Close Window'}
               </button>
             </motion.div>
           </motion.div>

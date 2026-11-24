@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     weekly_xp INTEGER DEFAULT 0 NOT NULL CHECK (weekly_xp >= 0),
     gems INTEGER DEFAULT 50 NOT NULL CHECK (gems >= 0),
     streak INTEGER DEFAULT 0 NOT NULL CHECK (streak >= 0),
-    energy INTEGER DEFAULT 50 NOT NULL CHECK (energy >= 0),
+    energy INTEGER DEFAULT 25 NOT NULL CHECK (energy >= 0 AND energy <= 25),
     accuracy NUMERIC(5, 2) DEFAULT 1.00 NOT NULL CHECK (accuracy >= 0.00 AND accuracy <= 1.00),
     avatar_id VARCHAR(50) DEFAULT 'user' NOT NULL,
     theme_id VARCHAR(50) DEFAULT 'blue' NOT NULL,

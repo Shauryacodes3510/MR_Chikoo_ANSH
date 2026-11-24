@@ -33,6 +33,7 @@ interface HeaderProps {
 function Header({ 
   gems,
   charging: energyUnits, 
+  onRefillRequest,
   onProfileClick,
   streak = 0,
   worlds,
@@ -52,6 +53,7 @@ function Header({
           streak={streak}
           gems={gems}
           energy={energyUnits}
+          onRefillRequest={onRefillRequest}
           onProfileClick={onProfileClick}
           worlds={worlds}
           selectedWorldId={selectedWorldId}

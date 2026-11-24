@@ -78,18 +78,39 @@ interface ExplanationOverlayProps {
 // ==========================================
 // 2. Sub-Component: AnimatedChikoo
 // ==========================================
+const MASCOT_EXPRESSIONS: Record<AnimatedChikooProps['currentExpression'], string> = {
+  still: '/mascot/still.webp',
+  talk1: '/mascot/talk1.webp',
+  talk2: '/mascot/talk2.webp',
+  sarcastic: '/mascot/sarcastic.webp',
+  wink: '/mascot/wink.webp',
+  hand_on_head1: '/mascot/hand_on_head1.webp',
+  hand_on_head2: '/mascot/hand_on_head2.webp',
+  shock: '/mascot/shock.webp'
+};
+
 export const AnimatedChikoo = memo(({ currentExpression, isPlaying }: AnimatedChikooProps) => {
+  // Preload all expression frames once on mount for instant 60fps lip-sync
+  useEffect(() => {
+    Object.values(MASCOT_EXPRESSIONS).forEach(src => {
+      const img = new Image();
+      img.src = src;
+    });
+  }, []);
+
+  const imageSrc = MASCOT_EXPRESSIONS[currentExpression] || MASCOT_EXPRESSIONS.still;
+
   return (
     <div id="chikoo-illustration-container" className="absolute inset-0 z-0 bg-slate-950 flex items-center justify-center overflow-hidden">
       <motion.div
         id="chikoo-breathing-wrapper"
         animate={{
-          y: [0, -10, 0], 
+          y: isPlaying ? [0, -6, 0] : [0, -10, 0], 
           rotate: [-0.5, 0.5, -0.5], 
-          scale: [1, 1.012, 1], 
+          scale: isPlaying ? [1, 1.02, 1] : [1, 1.012, 1], 
         }}
         transition={{
-          duration: 5.5,
+          duration: isPlaying ? 2.5 : 5.5,
           repeat: Infinity,
           ease: "easeInOut",
         }}
@@ -97,12 +118,16 @@ export const AnimatedChikoo = memo(({ currentExpression, isPlaying }: AnimatedCh
         className="relative w-full h-full flex items-center justify-center pointer-events-none"
       >
         <img
-          id="chikoo-pose-gif"
-          src="https://i.postimg.cc/HkPxprQf/ezgif-com-gif-maker-(2).gif"
-          alt="Chikoo Space Explorer Animation"
-          onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/heading_aibo.webp'; }}
-          referrerPolicy="no-referrer"
-          className="absolute inset-0 w-full h-full object-contain md:object-cover opacity-90 z-10"
+          id="chikoo-pose-sprite"
+          src={imageSrc}
+          alt={`Chikoo ${currentExpression} Expression`}
+          onError={(e) => { 
+            const target = e.currentTarget as HTMLImageElement;
+            if (target.src !== '/heading_aibo.webp') {
+              target.src = '/heading_aibo.webp';
+            }
+          }}
+          className="w-full h-full max-h-[85vh] object-contain drop-shadow-[0_10px_25px_rgba(0,0,0,0.5)] z-10 select-none pointer-events-none transition-all duration-75"
         />
       </motion.div>
 

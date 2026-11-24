@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { X } from 'lucide-react';
 import cookiesIcon from '@/cookies.webp';
 import chestImage from '@/chest1.webp';
 import { soundManager } from '../lib/sounds';
@@ -77,6 +78,18 @@ export const InteractiveChestTapClaim: React.FC<InteractiveChestTapClaimProps> =
       transition={{ duration: 0.4, ease: "easeOut" }}
       className="fixed inset-0 z-[99999] flex flex-col items-center justify-center p-4 text-center select-none overflow-hidden backdrop-blur-sm"
     >
+      {/* Ambient Dismiss Button */}
+      <button
+        type="button"
+        onClick={() => {
+          if (onClaimComplete) onClaimComplete();
+        }}
+        className="absolute top-5 right-5 z-50 w-10 h-10 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-all border border-slate-700 shadow-md"
+        aria-label="Close chest"
+      >
+        <X className="w-5 h-5" />
+      </button>
+
       {/* Lightweight Ambient Radial Glow */}
       <div 
         className="absolute w-80 h-80 rounded-full pointer-events-none -z-0 bg-yellow-300/30 blur-2xl transition-opacity duration-500"

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCelebration, CelebrationEvent } from './CelebrationProvider';
-import { Trophy, Star, Zap, Flame, Award, Sparkles } from 'lucide-react';
+import { Trophy, Star, Zap, Flame, Award, Sparkles, X } from 'lucide-react';
 import cookiesIcon from '@/cookies.webp';
 import { soundManager } from '../lib/sounds';
 import ChestIcon from './ui/ChestIcon';
@@ -368,6 +368,7 @@ function CelebrationOverlay() {
   const rewards = localEvent ? parseMicroRewards(localEvent) : [];
   // Ensure ONLY ONE primary reward/achievement is shown
   const primaryReward = rewards.length > 0 ? rewards[0] : null;
+  const isChestReward = localEvent?.triggerType === 'reward_box_opened';
 
   return (
     <AnimatePresence>
@@ -379,15 +380,37 @@ function CelebrationOverlay() {
           transition={{ duration: 0.3 }}
           className="fixed inset-0 z-[99999] bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6 select-none overflow-hidden"
         >
-          {/* Always use InteractiveChestTapClaim for reward/cookie celebrations */}
-          <InteractiveChestTapClaim
-            cookieCount={primaryReward?.count || localEvent.cookiesEarned || 100}
-            title={primaryReward?.title || localEvent.title || "TREASURE UNLOCKED!"}
-            subtitle={localEvent.description || "Tap 3 times to crack open the treasure chest!"}
-            onClaimComplete={() => {
-              closeActiveCelebration();
-            }}
-          />
+          {/* Easy Dismiss Button so user is never trapped */}
+          <button
+            type="button"
+            onClick={closeActiveCelebration}
+            className="absolute top-5 right-5 z-[100000] w-10 h-10 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer transition-all border border-slate-700 shadow-lg"
+            aria-label="Close celebration"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          {isChestReward ? (
+            <InteractiveChestTapClaim
+              cookieCount={primaryReward?.count || localEvent.cookiesEarned || 100}
+              title={primaryReward?.title || localEvent.title || "TREASURE UNLOCKED!"}
+              subtitle={localEvent.description || "Tap 3 times to crack open the treasure chest!"}
+              onClaimComplete={() => {
+                closeActiveCelebration();
+              }}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center w-full max-w-sm z-10">
+              {primaryReward && <SingleAchievementView reward={primaryReward} />}
+              <button
+                type="button"
+                onClick={closeActiveCelebration}
+                className="mt-6 w-full py-3 px-6 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 font-black text-sm uppercase tracking-wider shadow-lg active:scale-95 transition-all cursor-pointer"
+              >
+                Awesome! Continue 🚀
+              </button>
+            </div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

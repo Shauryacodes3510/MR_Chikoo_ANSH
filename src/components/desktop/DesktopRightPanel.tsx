@@ -37,6 +37,7 @@ interface DesktopRightPanelProps {
   onClaimChest?: () => Promise<any>;
   setView: (view: any) => void;
   onOpenCookieWheel: () => void;
+  onRefillEnergy?: () => void;
   className?: string;
 }
 
@@ -52,6 +53,7 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
   onClaimChest,
   setView,
   onOpenCookieWheel,
+  onRefillEnergy,
   className = ''
 }: DesktopRightPanelProps) {
   const { t } = useTranslation();
@@ -246,15 +248,21 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
             </div>
 
             {/* Energy / Lives Pill */}
-            <div className="p-2.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/50 transition-all flex flex-col items-center justify-center text-center shadow-xs">
-              <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400 mb-1">
-                <Heart size={14} className="fill-emerald-500 text-emerald-500" />
+            <div 
+              onClick={() => onRefillEnergy?.()}
+              role="button"
+              tabIndex={0}
+              title="Click to view or refill hearts"
+              className="p-2.5 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-900/50 transition-all flex flex-col items-center justify-center text-center shadow-xs cursor-pointer hover:scale-105 active:scale-95 group"
+            >
+              <div className="w-6 h-6 rounded-full bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center text-rose-600 dark:text-rose-400 mb-1 group-hover:scale-110 transition-transform">
+                <Heart size={14} className="fill-rose-500 text-rose-500" />
               </div>
-              <span className="font-display font-black text-xs text-emerald-900 dark:text-emerald-200 leading-tight">
+              <span className="font-display font-black text-xs text-rose-900 dark:text-rose-200 leading-tight">
                 {Math.min(5, Math.ceil(energy / 5))}/5
               </span>
-              <span className="text-[9px] font-bold text-emerald-700/80 dark:text-emerald-400 uppercase tracking-tight">
-                {t('common.energy', 'Energy')}
+              <span className="text-[9px] font-bold text-rose-700/80 dark:text-rose-400 uppercase tracking-tight">
+                {t('common.hearts', 'Hearts')}
               </span>
             </div>
           </div>

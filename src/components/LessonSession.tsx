@@ -102,6 +102,7 @@ interface LessonSessionProps {
   onComplete: (xpEarned: number, accuracy: number, finalStreak: number) => void;
   onStreakRestore?: (amount: number, streak: number) => void;
   onQuestionAnswered?: (isCorrect: boolean) => void;
+  onRefillEnergy?: () => void;
   energy?: number;
   nextEnergyIn?: number | null;
 }
@@ -195,6 +196,7 @@ export default function LessonSession({
   onComplete, 
   onStreakRestore, 
   onQuestionAnswered,
+  onRefillEnergy,
   energy = 25,
   nextEnergyIn = null
 }: LessonSessionProps) {
@@ -572,6 +574,13 @@ export default function LessonSession({
   const handleCheck = useCallback((manualOption?: any) => {
     if (isChecked || !currentChallenge) return;
     
+    // Out of hearts check: if hearts/energy are depleted on an interactive question, block & prompt refill
+    if (energy <= 0 && !isReadingChallenge(currentChallenge)) {
+      soundManager.play('incorrect');
+      onRefillEnergy?.();
+      return;
+    }
+    
     // Ensure selectedOption is updated if manually provided (e.g., from RapidFire or StepDebugger)
     // Safeguard against React MouseEvent or other DOM events being captured as manualOption
     const isEvent = manualOption && (manualOption.nativeEvent || manualOption.preventDefault || manualOption.target);
@@ -853,9 +862,9 @@ export default function LessonSession({
       setSessionStreak(nextStreak);
       setMaxSessionStreak(m => Math.max(m, nextStreak));
       
-      // Restore energy every 5 correct answers in a row
+      // Restore 1 full heart (5 energy units) every 5 correct answers in a row
       if (nextStreak > 0 && nextStreak % 5 === 0 && onStreakRestore) {
-        onStreakRestore(1, nextStreak);
+        onStreakRestore(5, nextStreak);
       }
       
       soundManager.play('correct');
@@ -871,7 +880,7 @@ export default function LessonSession({
       setFeedback('incorrect');
       soundManager.play('incorrect');
     }
-  }, [isChecked, currentChallenge, selectedOption, sessionStreak, onStreakRestore, onQuestionAnswered, attempts, currentIndex]);
+  }, [isChecked, currentChallenge, selectedOption, sessionStreak, onStreakRestore, onQuestionAnswered, attempts, currentIndex, energy, onRefillEnergy]);
 
   const handleSelect = useCallback((option: any) => {
     if (isChecked) return;
@@ -1866,7 +1875,8 @@ export default function LessonSession({
             energyUnits={energy} 
             nextChargingIn={nextEnergyIn} 
             showZap={true} 
-            className="scale-75 origin-right" 
+            className="scale-75 origin-right cursor-pointer" 
+            onRefill={onRefillEnergy}
           />
         </div>
       </div>
