@@ -1896,21 +1896,35 @@ export default function LessonSession({
               {/* Only show default question header if NOT on a reading / storytelling content screen */}
               {!isReadingChallenge(currentChallenge) && (
                 <div className="w-full max-w-xl mx-auto flex flex-row items-center justify-start gap-3 sm:gap-4 mb-5 select-none text-left">
-                  {/* Left Side Playful Chikoo Mascot (Onboarding Style - Increased Size) */}
+                  {/* Left Side Playful Chikoo Mascot (Dynamic Expressions & Lip-Sync) */}
                   <motion.div 
                     initial={{ scale: 0.8, x: -12, opacity: 0 }}
-                    animate={{ scale: 1, x: 0, opacity: 1, y: [0, -6, 0] }}
+                    animate={{ 
+                      scale: feedback === 'correct' ? [1, 1.15, 1] : feedback === 'incorrect' ? [1, 0.92, 1] : 1, 
+                      x: feedback === 'incorrect' ? [0, -6, 6, -4, 4, 0] : 0, 
+                      opacity: 1, 
+                      y: screenAudio.isPlaying ? [0, -8, 0] : [0, -6, 0] 
+                    }}
                     transition={{ 
                       scale: { type: "spring", stiffness: 360, damping: 18 },
-                      y: { duration: 3, repeat: Infinity, ease: "easeInOut" }
+                      y: { duration: screenAudio.isPlaying ? 1.2 : 3, repeat: Infinity, ease: "easeInOut" }
                     }}
                     className="w-32 h-32 sm:w-40 sm:h-40 shrink-0 relative flex items-center justify-center filter drop-shadow-md"
                   >
                     <img 
-                      src="/heading_aibo.webp" 
+                      key={feedback || (screenAudio.isPlaying ? 'talking' : 'idle')}
+                      src={
+                        feedback === 'correct'
+                          ? '/mascot/wink.webp'
+                          : feedback === 'incorrect'
+                          ? '/mascot/shock.webp'
+                          : screenAudio.isPlaying
+                          ? '/mascot/talk1.webp'
+                          : '/mascot/still.webp'
+                      } 
                       alt="Chikoo Mascot" 
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/avatar.webp'; }}
-                      className="w-full h-full object-contain pointer-events-none select-none"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/mascot/still.webp'; }}
+                      className="w-full h-full object-contain pointer-events-none select-none transition-transform duration-150"
                       referrerPolicy="no-referrer"
                     />
                   </motion.div>
