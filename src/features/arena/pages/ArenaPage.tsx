@@ -143,6 +143,14 @@ export default function ArenaPage({ onBack }: { onBack?: () => void }) {
     setPhase('matchmaking');
   };
 
+  const handleMatchFound = () => {
+    setPhase('countdown');
+  };
+
+  const handleCountdownComplete = () => {
+    setPhase('battle');
+  };
+
     const handleBattleFinished = (result: ArenaResult) => {
     setBattleResult(result);
     setPhase('finished');

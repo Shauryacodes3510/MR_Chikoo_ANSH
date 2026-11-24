@@ -1673,16 +1673,21 @@ function AppContent() {
       }
 
       // Grant XP & Gems and persist to Supabase immediately (ONE-TIME ONLY)
-      if (actualGemsEarned > 0 || (!alreadyCompleted && uniqueCompleted.length > 0)) {
-        const nextGems = gems + actualGemsEarned;
-        const nextWeeklyXp = weeklyXp + actualGemsEarned;
-        saveProfileUpdates({
-          completed_lessons: uniqueCompleted,
-          gems: nextGems,
-          weekly_xp: nextWeeklyXp
+      if (passed && !alreadyCompleted && actualGemsEarned > 0) {
+        rewardService.grantReward({
+          claimId: `adventure_${nodeId}`,
+          amount: actualGemsEarned,
+          rewardType: 'adventure',
+          metadata: { nodeId, type }
+        }).then(res => {
+          if (res.newBalance !== undefined) {
+            setGems(res.newBalance);
+          }
+        }).catch(err => {
+          console.warn('[AdventureComplete] Reward sync notice:', err);
         });
-        setGems(nextGems);
-        setWeeklyXp(nextWeeklyXp);
+        setGems(prev => prev + actualGemsEarned);
+        setWeeklyXp(prev => prev + actualGemsEarned);
       }
 
       if (actualXpEarned > 0) {
@@ -1703,7 +1708,7 @@ function AppContent() {
     // Reset states and return home
     setAdventureLauncher(null);
     setView('home');
-  }, [adventureLauncher, completedLessons, saveProfileUpdates, triggerCelebration]);
+  }, [adventureLauncher, completedLessons, saveProfileUpdates, triggerCelebration, gems, weeklyXp, sessionUser]);
 
   const handleAdventureCancel = useCallback(() => {
     setAdventureLauncher(null);
@@ -1786,18 +1791,45 @@ function AppContent() {
 
       if (matchedNode.isChest || cleanTargetId.startsWith('treasure_')) {
         console.log(`[handleLessonSelect] Claiming Treasure Chest reward for node "${rawTargetId}"`);
+        if (completedLessons.includes(rawTargetId)) {
+          soundManager.play('pop');
+          triggerCelebration('reward_box_opened', {
+            title: 'Chest Already Claimed',
+            description: 'You have already collected the golden cookies from this secret chest!'
+          });
+          return;
+        }
         const xpEarned = 150;
-        const gemsEarned = 15;
+        const gemsEarned = 50;
         const newCompleted = [...new Set([...completedLessons, rawTargetId])];
         saveStoredCompletedLessonsBatch(newCompleted, sessionUser);
         setCompletedLessons(newCompleted);
-        saveProfileUpdates({ completed_lessons: newCompleted });
         setXp(prev => prev + xpEarned);
         setGems(prev => prev + gemsEarned);
         soundManager.play('complete');
         triggerCelebration('reward_box_opened', {
           title: '🎁 Secret Treasure Unlocked!',
-          description: `You discovered golden cookies! +${xpEarned} XP & +${gemsEarned} Cookies claimed!`
+          description: `You discovered golden cookies! +${xpEarned} XP & +${gemsEarned} Cookies claimed!`,
+          rewardText: `+${gemsEarned} Cookies 🍪`
+        });
+
+        rewardService.grantReward({
+          claimId: `chest_${rawTargetId}`,
+          amount: gemsEarned,
+          rewardType: 'treasure_chest',
+          metadata: { nodeId: rawTargetId }
+        }).then(res => {
+          if (res.newBalance !== undefined) {
+            setGems(res.newBalance);
+          }
+          saveProfileUpdates({
+            completed_lessons: newCompleted,
+            gems: res.newBalance,
+            total_chests_claimed: (totalChestsClaimed || 0) + 1
+          });
+        }).catch(err => {
+          console.warn('[TreasureChest] Error persisting reward:', err);
+          saveProfileUpdates({ completed_lessons: newCompleted });
         });
         return;
       }
@@ -1926,8 +1958,13 @@ function AppContent() {
 
   const refillEnergy = async () => {
     try {
-      if (gems >= REFILL_GEM_COST) {
-        const updated = await progressService.spendCookies(REFILL_GEM_COST);
+      if (gems < REFILL_GEM_COST) {
+        soundManager.play('incorrect');
+        alert(`You need at least ${REFILL_GEM_COST} Cookies to refill your hearts! Complete lessons, quests, or spin the wheel to earn more cookies.`);
+        return;
+      }
+      const updated = await progressService.spendCookies(REFILL_GEM_COST, 'Hearts Refill', 'energy_refill');
+      if (updated && typeof updated.gems === 'number') {
         setGems(updated.gems);
       }
       await progressService.updateProfileData({ energy: MAX_ENERGY });
@@ -1943,7 +1980,6 @@ function AppContent() {
       setShowEnergyRefillModal(false);
     } catch (err) {
       console.error("Error refilling energy:", err);
-      setEnergy(MAX_ENERGY);
       setShowEnergyRefillModal(false);
     }
   };
@@ -2000,7 +2036,6 @@ function AppContent() {
         ])
       ];
       setCompletedLessons(newCompleted); // Update local state immediately for fast response
-      saveProfileUpdates({ completed_lessons: newCompleted });
 
       if (rawPackId || matchedPack) {
         handleChallengeComplete(matchedPack?.id || rawPackId!, earnedXp || 50);
@@ -2074,7 +2109,10 @@ function AppContent() {
       setWeeklyXp(prev => prev + totalEarnedXp);
 
       // Save progression synchronously through ProgressService (RPC idempotent)
-      progressService.recordLessonCompletion(lessonId, totalEarnedXp).then(() => {
+      progressService.recordLessonCompletion(lessonId, totalEarnedXp).then((updatedProfile) => {
+        if (updatedProfile && typeof updatedProfile.gems === 'number') {
+          setGems(updatedProfile.gems);
+        }
         progressService.updateProfileData({
           accuracy: (accuracy + sessionAccuracy) / 2
         });

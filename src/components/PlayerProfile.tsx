@@ -163,9 +163,10 @@ export default function PlayerProfile({
   const effectiveBestStreak = liveProfile?.best_streak !== undefined ? liveProfile.best_streak : bestAnswerStreak;
   const effectiveAccuracy = liveProfile?.accuracy !== undefined ? liveProfile.accuracy : accuracy;
 
-  // Level calculations: 300 XP per level
-  const currentLevel = Math.max(1, Math.floor(effectiveGems / 300) + 1);
-  const xpIntoLevel = effectiveGems % 300;
+  // Level calculations: Based on non-depleting XP / Lessons (spending cookies will never decrease level!)
+  const effectiveXp = Math.max(xp || 0, (completedLessons?.length || 0) * 100);
+  const currentLevel = Math.max(1, Math.floor(effectiveXp / 300) + 1);
+  const xpIntoLevel = effectiveXp % 300;
   const nextLevelThreshold = 300;
   const levelProgressRatio = Math.min(1, Math.max(0, xpIntoLevel / nextLevelThreshold));
 
@@ -900,12 +901,9 @@ export default function PlayerProfile({
 
                     <div className="pt-2">
                       {!isEarned ? (
-                        <button
-                          onClick={() => handleUnlockBadgeDirectly(selectedBadge)}
-                          className="w-full py-2.5 px-4 bg-[#8B35E8] hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer active:scale-95 transition-colors"
-                        >
-                          Unlock Badge (+100 XP)
-                        </button>
+                        <div className="w-full py-2.5 px-4 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold text-xs rounded-xl text-center border border-slate-200 dark:border-slate-700">
+                          🔒 Complete milestone above to unlock
+                        </div>
                       ) : (
                         <button
                           onClick={() => setSelectedBadge(null)}

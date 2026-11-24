@@ -418,7 +418,24 @@ class ProgressService {
     const currentLessons = current.completed_lessons || [];
     const isNew = !currentLessons.includes(lessonId);
     if (!isNew) {
-      return current;
+      // Practice replay: award 15 practice cookies, maintain daily activity, and record streak
+      const practiceCookies = 15;
+      recordActiveDayInStorageAndCookies(new Date(), email, practiceCookies);
+      try {
+        await rpcRecordStreakActivity(`practice_${lessonId}_${new Date().toISOString().slice(0, 10)}`, email, current.id);
+      } catch (_) {}
+      try {
+        await recordUserDailyActivity({
+          lessonsDelta: 1,
+          cookiesDelta: practiceCookies,
+          xpDelta: practiceCookies,
+          userId: current.id
+        });
+      } catch (_) {}
+      const rpcRes = await rpcCompleteChallenge(`practice_${lessonId}_${new Date().toISOString().slice(0, 10)}`, practiceCookies, 0, email);
+      return this.updateProfileData({
+        gems: rpcRes.newBalance
+      });
     }
     const newCompletedLessons = [...currentLessons, lessonId];
 
