@@ -64,7 +64,28 @@ import { UserPerformance } from './lib/sessionGenerator';
 import { soundManager } from './lib/sounds';
 import { AVATARS, THEMES, ALL_BADGES, LEAGUES, MAX_ENERGY } from './constants';
 import { LeaderboardEntry, DailyChallenge } from './types';
-import { isSupabaseConfigured, getProfile, updateProfile, SupabaseUserProfile, supabase, getAllUserProfiles, logChallengeCompletion, getModuleLearningPath, ModuleLearningPathNode, getWorlds, getUserWorldProgress, World, UserWorldProgress, saveUserWorldProgress, WORLD_1_UUID, WORLD_2_UUID, WORLD_3_UUID } from './lib/supabase';
+import { 
+  isSupabaseConfigured, 
+  getProfile, 
+  updateProfile, 
+  SupabaseUserProfile, 
+  supabase, 
+  getAllUserProfiles, 
+  getWeeklyLeaderboard,
+  invalidateWeeklyLeaderboardCache,
+  getNextMondayIST,
+  logChallengeCompletion, 
+  getModuleLearningPath, 
+  ModuleLearningPathNode, 
+  getWorlds, 
+  getUserWorldProgress, 
+  World, 
+  UserWorldProgress, 
+  saveUserWorldProgress, 
+  WORLD_1_UUID, 
+  WORLD_2_UUID, 
+  WORLD_3_UUID 
+} from './lib/supabase';
 import { progressService } from './lib/progressService';
 import { DailyStreakAnimation } from './components/DailyStreakAnimation';
 import { rewardService } from './lib/rewardService';
@@ -695,6 +716,13 @@ function AppContent() {
       return [];
     }
   });
+  const [resetsAt, setResetsAt] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('CHIKOO_LEADERBOARD_RESETS_AT');
+    } catch {
+      return null;
+    }
+  });
   const [allProfiles, setAllProfiles] = useState<SupabaseUserProfile[]>([]);
   
   const userRank = useMemo(() => {
@@ -804,11 +832,11 @@ function AppContent() {
       setIsDbAdmin(!!profile.is_admin);
       setUsername(profile.username || 'Shaurya Talks');
 
-      // Keep leaderboard entry in sync with confirmed profile.gems
+      // Keep leaderboard entry in sync with confirmed profile weekly_xp
       setWeeklyLeaderboard(prev => {
         const next = prev.map(entry => 
           entry.isCurrentUser 
-            ? { ...entry, xp: profile.gems, name: profile.username || entry.name }
+            ? { ...entry, xp: Number(profile.weekly_xp ?? 0), weekly_xp: Number(profile.weekly_xp ?? 0), name: profile.username || entry.name }
             : entry
         );
         next.sort((a, b) => b.xp - a.xp);
@@ -999,32 +1027,48 @@ function AppContent() {
             localStorage.removeItem(`chikoo_new_signup_${cleanEmail}`);
           }
 
-          // Hydrate full database leaderboard for the user
+          // Hydrate weekly leaderboard for the user via getWeeklyLeaderboard
           try {
-            const dbProfiles = await getAllUserProfiles();
-            if (dbProfiles && dbProfiles.length > 0) {
-              setAllProfiles(dbProfiles);
-              let mapped: LeaderboardEntry[] = dbProfiles.map((p, idx) => {
+            const leaderboardRes = await getWeeklyLeaderboard(100);
+            if (leaderboardRes && Array.isArray(leaderboardRes.entries)) {
+              if (leaderboardRes.resetsAt) {
+                setResetsAt(leaderboardRes.resetsAt);
+                try {
+                  localStorage.setItem('CHIKOO_LEADERBOARD_RESETS_AT', leaderboardRes.resetsAt);
+                } catch {}
+              }
+
+              const userWeeklyXp = Number(profile.weekly_xp ?? 0);
+              let foundMe = false;
+              let mapped: LeaderboardEntry[] = leaderboardRes.entries.map((entry) => {
                 const isMe = Boolean(
-                  (p.username && profile.username && p.username.toLowerCase() === profile.username.toLowerCase()) ||
-                  (p.email && cleanEmail && p.email.toLowerCase().trim() === cleanEmail)
+                  entry.isCurrentUser ||
+                  (profile.id && entry.id === profile.id) ||
+                  (cleanEmail && entry.id === cleanEmail)
                 );
-                const userGems = isMe ? profile.gems : Number(p.gems ?? p.xp ?? 0);
+                if (isMe) {
+                  foundMe = true;
+                  return {
+                    ...entry,
+                    isCurrentUser: true,
+                    name: usernameRef.current || profile.username || entry.name,
+                    xp: userWeeklyXp,
+                    weekly_xp: userWeeklyXp,
+                  };
+                }
                 return {
-                  id: p.id || `player_${idx + 1}`,
-                  name: isMe ? (usernameRef.current || profile.username || 'Space Explorer') : (p.username || `Explorer ${idx + 1}`),
-                  xp: userGems,
-                  rank: idx + 1,
-                  isCurrentUser: isMe,
-                  joinedDate: p.created_at ? new Date(p.created_at).getTime() : Date.now(),
+                  ...entry,
+                  xp: Number(entry.xp ?? entry.weekly_xp ?? 0),
+                  weekly_xp: Number(entry.weekly_xp ?? entry.xp ?? 0)
                 };
               });
 
-              if (!mapped.some(e => e.isCurrentUser)) {
+              if (!foundMe && sessionUser) {
                 mapped.push({
                   id: profile.id || cleanEmail,
                   name: profile.username || usernameRef.current || cleanEmail.split('@')[0],
-                  xp: profile.gems,
+                  xp: userWeeklyXp,
+                  weekly_xp: userWeeklyXp,
                   rank: mapped.length + 1,
                   isCurrentUser: true,
                   joinedDate: Date.now()
@@ -1034,7 +1078,9 @@ function AppContent() {
               mapped.sort((a, b) => b.xp - a.xp);
               mapped = mapped.map((e, idx) => ({ ...e, rank: idx + 1 }));
               setWeeklyLeaderboard(mapped);
-              localStorage.setItem('CHIKOO_CACHED_LEADERBOARD', JSON.stringify(mapped));
+              try {
+                localStorage.setItem('CHIKOO_CACHED_LEADERBOARD', JSON.stringify(mapped));
+              } catch {}
             }
           } catch (leadErr) {
             console.warn("Leaderboard preload in loadData error:", leadErr);
@@ -1136,52 +1182,77 @@ function AppContent() {
 
   const gemsRef = useRef(gems);
   const usernameRef = useRef(username);
+  const weeklyXpRef = useRef(weeklyXp);
   useEffect(() => {
     gemsRef.current = gems;
   }, [gems]);
   useEffect(() => {
     usernameRef.current = username;
   }, [username]);
+  useEffect(() => {
+    weeklyXpRef.current = weeklyXp;
+  }, [weeklyXp]);
 
-  // Realtime subscription and initial load for leaderboard data from profiles database table
+  // Realtime subscription and initial load for leaderboard data via getWeeklyLeaderboard
   useEffect(() => {
     let isMounted = true;
 
-    async function loadRealtimeLeaderboard() {
+    async function loadRealtimeLeaderboard(forceRefresh: boolean = false) {
       try {
-        const profiles = await getAllUserProfiles();
+        if (forceRefresh) {
+          invalidateWeeklyLeaderboardCache();
+        }
+        const leaderboardRes = await getWeeklyLeaderboard(100);
         const currentProfile = progressService.getProfile();
-        const confirmedGems = currentProfile?.gems;
+        const currentWeeklyXp = Number(currentProfile?.weekly_xp ?? weeklyXpRef.current ?? 0);
         const currentEmail = sessionUser ? sessionUser.toLowerCase().trim() : '';
 
-        if (isMounted) {
-          setAllProfiles(profiles);
-          let mapped: LeaderboardEntry[] = profiles.map((p, idx) => {
-            const isMe = currentEmail ? p.email.toLowerCase().trim() === currentEmail : false;
-            const userGems = isMe && confirmedGems !== undefined ? confirmedGems : Number(p.gems ?? 0);
+        if (isMounted && leaderboardRes && Array.isArray(leaderboardRes.entries)) {
+          if (leaderboardRes.resetsAt) {
+            setResetsAt(leaderboardRes.resetsAt);
+            try {
+              localStorage.setItem('CHIKOO_LEADERBOARD_RESETS_AT', leaderboardRes.resetsAt);
+            } catch {}
+          }
+
+          let foundMe = false;
+          let mapped: LeaderboardEntry[] = leaderboardRes.entries.map((entry) => {
+            const isMe = Boolean(
+              entry.isCurrentUser ||
+              (currentProfile?.id && entry.id === currentProfile.id) ||
+              (currentEmail && entry.id === currentEmail)
+            );
+            if (isMe) {
+              foundMe = true;
+              return {
+                ...entry,
+                name: usernameRef.current || currentProfile?.username || entry.name,
+                xp: currentWeeklyXp,
+                weekly_xp: currentWeeklyXp,
+                isCurrentUser: true,
+              };
+            }
             return {
-              id: p.id || p.email,
-              name: (isMe && (usernameRef.current || currentProfile?.username)) ? (usernameRef.current || currentProfile?.username || '') : (p.username || p.email.split('@')[0]),
-              xp: userGems,
-              rank: idx + 1,
-              isCurrentUser: isMe,
-              joinedDate: p.created_at ? new Date(p.created_at).getTime() : Date.now(),
+              ...entry,
+              xp: Number(entry.xp ?? entry.weekly_xp ?? 0),
+              weekly_xp: Number(entry.weekly_xp ?? entry.xp ?? 0)
             };
           });
 
-          // Ensure authenticated user is included in the leaderboard with their confirmed gems
-          if (sessionUser && !mapped.some(e => e.isCurrentUser)) {
+          // Ensure authenticated user is included in the leaderboard with their confirmed weekly XP
+          if (sessionUser && !foundMe) {
             mapped.push({
               id: currentProfile?.id || sessionUser,
               name: currentProfile?.username || usernameRef.current || sessionUser.split('@')[0],
-              xp: confirmedGems !== undefined ? confirmedGems : gemsRef.current,
+              xp: currentWeeklyXp,
+              weekly_xp: currentWeeklyXp,
               rank: mapped.length + 1,
               isCurrentUser: true,
               joinedDate: Date.now()
             });
           }
 
-          // Sort by xp (profiles.gems) descending and re-assign clean ranks
+          // Sort by weekly XP descending and re-assign clean ranks
           mapped.sort((a, b) => b.xp - a.xp);
           mapped = mapped.map((m, idx) => ({ ...m, rank: idx + 1 }));
 
@@ -1191,18 +1262,39 @@ function AppContent() {
           } catch {}
         }
       } catch (err) {
-        console.error("Error loading realtime database leaderboard:", err);
+        console.error("Error loading weekly database leaderboard:", err);
       }
     }
 
     loadRealtimeLeaderboard();
 
-    // Re-fetch confirmed leaderboard immediately on reward grant or profile update events
-    const handleRewardOrUpdate = () => {
-      loadRealtimeLeaderboard();
+    // Re-fetch confirmed leaderboard immediately on window focus, reward grant, profile update, or XP earning events
+    const handleRefresh = () => {
+      loadRealtimeLeaderboard(true);
     };
-    window.addEventListener('chikooRewardGranted', handleRewardOrUpdate);
-    window.addEventListener('chikooProfileUpdated', handleRewardOrUpdate);
+    window.addEventListener('focus', handleRefresh);
+    window.addEventListener('chikooRewardGranted', handleRefresh);
+    window.addEventListener('chikooProfileUpdated', handleRefresh);
+    window.addEventListener('chikooXpEarned', handleRefresh);
+
+    // Schedule check for weekly reset
+    let resetTimer: any = null;
+    const scheduleReset = () => {
+      try {
+        const nextResetMs = getNextMondayIST().getTime();
+        const delay = Math.max(1000, nextResetMs - Date.now() + 1000);
+        if (delay < 0x7fffffff) {
+          resetTimer = setTimeout(() => {
+            invalidateWeeklyLeaderboardCache();
+            loadRealtimeLeaderboard(true);
+            scheduleReset();
+          }, delay);
+        }
+      } catch (err) {
+        console.warn('Failed to schedule leaderboard reset timer:', err);
+      }
+    };
+    scheduleReset();
 
     // Setup real-time postgres changes subscription on the public.profiles table
     let channel: any = null;
@@ -1210,7 +1302,7 @@ function AppContent() {
       channel = supabase
         .channel('profiles-realtime-leaderboard')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
-          loadRealtimeLeaderboard();
+          loadRealtimeLeaderboard(true);
         })
         .subscribe();
     }
@@ -1223,8 +1315,11 @@ function AppContent() {
     return () => {
       isMounted = false;
       clearInterval(fallbackInterval);
-      window.removeEventListener('chikooRewardGranted', handleRewardOrUpdate);
-      window.removeEventListener('chikooProfileUpdated', handleRewardOrUpdate);
+      if (resetTimer) clearTimeout(resetTimer);
+      window.removeEventListener('focus', handleRefresh);
+      window.removeEventListener('chikooRewardGranted', handleRefresh);
+      window.removeEventListener('chikooProfileUpdated', handleRefresh);
+      window.removeEventListener('chikooXpEarned', handleRefresh);
       if (channel && supabase) {
         supabase.removeChannel(channel);
       }
@@ -1355,27 +1450,24 @@ function AppContent() {
   // Profile save sync helper via ProgressService
   const saveProfileUpdates = useCallback(async (updates: Partial<SupabaseUserProfile>) => {
     if (!sessionUser) return;
+    // Strip privileged fields to prevent silent trigger reverts on the backend
+    const { xp: _xp, weekly_xp: _wxp, gems: _gems, trophies: _trophies, ...safeUpdates } = updates;
+
     // Optimistically apply local state updates immediately so UI never waits for backend
-    if (updates.gems !== undefined) setGems(updates.gems);
-    if (updates.streak !== undefined) setStreak(updates.streak);
-    if (updates.weekly_xp !== undefined) setWeeklyXp(updates.weekly_xp);
-    if (updates.energy !== undefined) setEnergy(updates.energy);
-    if (updates.accuracy !== undefined) setAccuracy(updates.accuracy);
-    if (updates.trophies !== undefined) setTrophies(updates.trophies);
-    if (updates.completed_lessons !== undefined && Array.isArray(updates.completed_lessons)) {
-      setCompletedLessons(updates.completed_lessons);
-      saveStoredCompletedLessonsBatch(updates.completed_lessons, sessionUser);
+    if (safeUpdates.streak !== undefined) setStreak(safeUpdates.streak);
+    if (safeUpdates.energy !== undefined) setEnergy(safeUpdates.energy);
+    if (safeUpdates.accuracy !== undefined) setAccuracy(safeUpdates.accuracy);
+    if (safeUpdates.completed_lessons !== undefined && Array.isArray(safeUpdates.completed_lessons)) {
+      setCompletedLessons(safeUpdates.completed_lessons);
+      saveStoredCompletedLessonsBatch(safeUpdates.completed_lessons, sessionUser);
     }
 
     try {
-      const confirmed = await progressService.updateProfileData(updates);
+      const confirmed = await progressService.updateProfileData(safeUpdates);
       if (confirmed) {
-        if (updates.gems !== undefined) setGems(confirmed.gems);
-        if (updates.streak !== undefined) setStreak(confirmed.streak);
-        if (updates.weekly_xp !== undefined) setWeeklyXp(confirmed.weekly_xp);
-        if (updates.energy !== undefined) setEnergy(confirmed.energy);
-        if (updates.accuracy !== undefined) setAccuracy(confirmed.accuracy);
-        if (updates.trophies !== undefined) setTrophies(confirmed.trophies);
+        if (safeUpdates.streak !== undefined) setStreak(confirmed.streak);
+        if (safeUpdates.energy !== undefined) setEnergy(confirmed.energy);
+        if (safeUpdates.accuracy !== undefined) setAccuracy(confirmed.accuracy);
         if (confirmed.completed_lessons && Array.isArray(confirmed.completed_lessons)) {
           setCompletedLessons(confirmed.completed_lessons);
           saveStoredCompletedLessonsBatch(confirmed.completed_lessons, sessionUser);
@@ -1401,13 +1493,14 @@ function AppContent() {
       saveStoredCompletedLessonsBatch(updates.completed_lessons, email);
     }
     
-    if (updates.gems !== undefined || updates.username !== undefined) {
+    if (updates.weekly_xp !== undefined || updates.username !== undefined) {
       setWeeklyLeaderboard(prev => {
         const next = prev.map(entry => 
           entry.isCurrentUser 
             ? { 
                 ...entry, 
-                xp: updates.gems !== undefined ? updates.gems : entry.xp, 
+                xp: updates.weekly_xp !== undefined ? updates.weekly_xp : entry.xp, 
+                weekly_xp: updates.weekly_xp !== undefined ? updates.weekly_xp : entry.weekly_xp,
                 name: updates.username !== undefined ? updates.username : entry.name 
               }
             : entry
@@ -1433,6 +1526,24 @@ function AppContent() {
     }
     lastLevel.current = currentLvl;
   }, [xp, dataLoaded, triggerCelebration]);
+
+  // Observer: when weeklyXp changes (XP earning event), keep current user on leaderboard in sync
+  useEffect(() => {
+    if (!dataLoaded) return;
+    setWeeklyLeaderboard(prev => {
+      let updated = false;
+      const next = prev.map(entry => {
+        if (entry.isCurrentUser) {
+          updated = true;
+          return { ...entry, xp: weeklyXp, weekly_xp: weeklyXp, name: usernameRef.current || entry.name };
+        }
+        return entry;
+      });
+      if (!updated) return prev;
+      next.sort((a, b) => b.xp - a.xp);
+      return next.map((e, idx) => ({ ...e, rank: idx + 1 }));
+    });
+  }, [weeklyXp, dataLoaded]);
 
   // Observer: Leaderboard Rank tracker
   const lastRank = useRef<number | null>(null);
@@ -1517,26 +1628,21 @@ function AppContent() {
 
   const handleGemsChange = useCallback((v: number) => {
     setGems(v);
-    saveProfileUpdates({ gems: v });
-  }, [saveProfileUpdates]);
+  }, []);
 
   const handleXpChange = useCallback((v: number) => {
     setXp(v);
-    saveProfileUpdates({ xp: v });
-  }, [saveProfileUpdates]);
+  }, []);
 
   const handleBackToHome = useCallback(() => {
     setView('home');
   }, []);
 
   const handleClaimGems = useCallback((amount: number, newBalance?: number) => {
-    if (typeof newBalance === 'number') {
-      setGems(newBalance);
-    } else {
-      setGems(prev => prev + amount);
-    }
-    progressService.updateProfileData({
-      gems: typeof newBalance === 'number' ? newBalance : gems + amount
+    const nextGems = typeof newBalance === 'number' ? newBalance : gems + amount;
+    setGems(nextGems);
+    progressService.updateProfileLocally({
+      gems: nextGems
     });
   }, [gems]);
 
@@ -1611,8 +1717,31 @@ function AppContent() {
       return updated;
     });
     if (xpEarned > 0) {
-      setXp(prev => prev + xpEarned);
-      setWeeklyXp(prev => prev + xpEarned);
+      rewardService.grantReward({
+        claimId: practiceId,
+        amount: 0,
+        xpReward: xpEarned,
+        rewardType: 'practice',
+        metadata: { packId }
+      }).then(res => {
+        if (res.granted) {
+          if (typeof (res as any).xp === 'number') {
+            setXp((res as any).xp);
+          } else {
+            setXp(prev => prev + xpEarned);
+          }
+          if (typeof (res as any).weekly_xp === 'number') {
+            setWeeklyXp((res as any).weekly_xp);
+          } else {
+            setWeeklyXp(prev => prev + xpEarned);
+          }
+          if (res.newBalance !== undefined && res.amount > 0) {
+            setGems(res.newBalance);
+          }
+        }
+      }).catch(err => {
+        console.warn('[handleChallengeComplete] Error awarding practice XP:', err);
+      });
     }
   }, [saveProfileUpdates, sessionUser]);
 
@@ -1663,33 +1792,42 @@ function AppContent() {
       }
 
       // Grant XP & Gems and persist to Supabase immediately (ONE-TIME ONLY)
-      if (passed && !alreadyCompleted && actualGemsEarned > 0) {
+      if (passed && !alreadyCompleted && (actualGemsEarned > 0 || actualXpEarned > 0)) {
         rewardService.grantReward({
           claimId: `adventure_${nodeId}`,
           amount: actualGemsEarned,
+          xpReward: actualXpEarned,
           rewardType: 'adventure',
           metadata: { nodeId, type }
         }).then(res => {
-          if (res.newBalance !== undefined) {
-            setGems(res.newBalance);
+          if (res.granted) {
+            if (res.newBalance !== undefined) {
+              setGems(res.newBalance);
+            }
+            if (actualXpEarned > 0) {
+              if (typeof (res as any).xp === 'number') {
+                setXp((res as any).xp);
+              } else {
+                setXp(prev => prev + actualXpEarned);
+              }
+              if (typeof (res as any).weekly_xp === 'number') {
+                setWeeklyXp((res as any).weekly_xp);
+              } else {
+                setWeeklyXp(prev => prev + actualXpEarned);
+              }
+            }
           }
         }).catch(err => {
           console.warn('[AdventureComplete] Reward sync notice:', err);
         });
-        setGems(prev => prev + actualGemsEarned);
-        setWeeklyXp(prev => prev + actualGemsEarned);
-      }
-
-      if (actualXpEarned > 0) {
-        setXp(prev => prev + actualXpEarned);
       }
 
       // Trigger celebration if passed for the first time
-      if (passed && !alreadyCompleted && actualGemsEarned > 0) {
+      if (passed && !alreadyCompleted && (actualGemsEarned > 0 || actualXpEarned > 0)) {
         triggerCelebration('challenge_complete', {
           title: type === 'treasure' ? '🎁 Secret Treasure Claimed!' : type === 'guardian' ? '🤖 Boss Guardian Defeated!' : '🎉 AI Challenge Mastered!',
           description: type === 'treasure' ? 'You unlocked the secret rewards container and found golden cookies!' : type === 'guardian' ? 'You conquered the arena defender and claimed your cookie bounty!' : 'You mastered the module assessment and earned delicious cookies!',
-          rewardText: `+${actualGemsEarned} Cookies 🍪`
+          rewardText: actualGemsEarned > 0 ? `+${actualGemsEarned} Cookies 🍪` : `+${actualXpEarned} XP ⭐`
         });
         setShowGlobalConfetti(true);
       }
@@ -1698,7 +1836,7 @@ function AppContent() {
     // Reset states and return home
     setAdventureLauncher(null);
     setView('home');
-  }, [adventureLauncher, completedLessons, saveProfileUpdates, triggerCelebration, gems, weeklyXp, sessionUser]);
+  }, [adventureLauncher, completedLessons, saveProfileUpdates, triggerCelebration, sessionUser]);
 
   const handleAdventureCancel = useCallback(() => {
     setAdventureLauncher(null);
@@ -1794,29 +1932,42 @@ function AppContent() {
         const newCompleted = [...new Set([...completedLessons, rawTargetId])];
         saveStoredCompletedLessonsBatch(newCompleted, sessionUser);
         setCompletedLessons(newCompleted);
-        setXp(prev => prev + xpEarned);
-        setGems(prev => prev + gemsEarned);
-        soundManager.play('complete');
-        triggerCelebration('reward_box_opened', {
-          title: '🎁 Secret Treasure Unlocked!',
-          description: `You discovered golden cookies! +${xpEarned} XP & +${gemsEarned} Cookies claimed!`,
-          rewardText: `+${gemsEarned} Cookies 🍪`
-        });
 
         rewardService.grantReward({
           claimId: `chest_${rawTargetId}`,
           amount: gemsEarned,
+          xpReward: xpEarned,
           rewardType: 'treasure_chest',
           metadata: { nodeId: rawTargetId }
         }).then(res => {
-          if (res.newBalance !== undefined) {
-            setGems(res.newBalance);
+          if (res.granted) {
+            if (res.newBalance !== undefined) {
+              setGems(res.newBalance);
+            }
+            if (typeof (res as any).xp === 'number') {
+              setXp((res as any).xp);
+            } else {
+              setXp(prev => prev + xpEarned);
+            }
+            if (typeof (res as any).weekly_xp === 'number') {
+              setWeeklyXp((res as any).weekly_xp);
+            } else {
+              setWeeklyXp(prev => prev + xpEarned);
+            }
+            setTotalChestsClaimed(prev => prev + 1);
+            soundManager.play('complete');
+            triggerCelebration('reward_box_opened', {
+              title: '🎁 Secret Treasure Unlocked!',
+              description: `You discovered golden cookies! +${xpEarned} XP & +${gemsEarned} Cookies claimed!`,
+              rewardText: `+${gemsEarned} Cookies 🍪`
+            });
+            saveProfileUpdates({
+              completed_lessons: newCompleted,
+              total_chests_claimed: (totalChestsClaimed || 0) + 1
+            });
+          } else {
+            saveProfileUpdates({ completed_lessons: newCompleted });
           }
-          saveProfileUpdates({
-            completed_lessons: newCompleted,
-            gems: res.newBalance,
-            total_chests_claimed: (totalChestsClaimed || 0) + 1
-          });
         }).catch(err => {
           console.warn('[TreasureChest] Error persisting reward:', err);
           saveProfileUpdates({ completed_lessons: newCompleted });
@@ -1888,11 +2039,34 @@ function AppContent() {
     startTransition(() => {
       // Streak Bonus: +5 Cookies & +1 Heart for every 5 correct answers in a row
       if (streakCount % 5 === 0) {
-        setXp(prev => prev + 5);
-        setGems(prev => prev + 5);
         setChargingAnimation({ 
           text: `${streakCount} Streak! +5 Cookies & +1 Heart ❤️`, 
           id: Date.now() 
+        });
+        rewardService.grantReward({
+          claimId: `streak_bonus_${Date.now()}_${streakCount}`,
+          amount: 5,
+          xpReward: 5,
+          rewardType: 'streak_bonus',
+          metadata: { streakCount }
+        }).then(res => {
+          if (res.granted) {
+            if (res.newBalance !== undefined) {
+              setGems(res.newBalance);
+            }
+            if (typeof (res as any).xp === 'number') {
+              setXp((res as any).xp);
+            } else {
+              setXp(prev => prev + 5);
+            }
+            if (typeof (res as any).weekly_xp === 'number') {
+              setWeeklyXp((res as any).weekly_xp);
+            } else {
+              setWeeklyXp(prev => prev + 5);
+            }
+          }
+        }).catch(err => {
+          console.warn('[handleRestoreEnergy] Streak bonus sync notice:', err);
         });
       } else {
         setChargingAnimation({ 
@@ -2172,11 +2346,24 @@ function AppContent() {
             const claimRes = await rewardService.grantReward({
               claimId: `badge_${badgeId}`,
               amount: 100,
-              rewardType: 'badge'
+              xpReward: 100,
+              rewardType: 'badge',
+              metadata: { badgeId }
             });
             if (claimRes.granted) {
-              setGems(claimRes.newBalance);
-              setXp(prev => prev + 100);
+              if (claimRes.newBalance !== undefined) {
+                setGems(claimRes.newBalance);
+              }
+              if (typeof (claimRes as any).xp === 'number') {
+                setXp((claimRes as any).xp);
+              } else {
+                setXp(prev => prev + 100);
+              }
+              if (typeof (claimRes as any).weekly_xp === 'number') {
+                setWeeklyXp((claimRes as any).weekly_xp);
+              } else {
+                setWeeklyXp(prev => prev + 100);
+              }
               triggerCelebration('achievement_earned', {
                 title: '🏆 Achievement Earned!',
                 description: `You've unlocked the "${badgeDetails.name}" Badge: ${badgeDetails.requirement}!`,
@@ -2217,21 +2404,31 @@ function AppContent() {
     if (completedDailyChallenges.includes(challenge.id) || rewardService.isClaimed(claimId)) return;
     
     const nextDailyCompletions = [...completedDailyChallenges, challenge.id];
-    setCompletedDailyChallenges(nextDailyCompletions);
 
     const res = await rewardService.grantReward({
       claimId,
       amount: challenge.xpReward,
+      xpReward: challenge.xpReward,
       rewardType: 'daily_challenge',
       metadata: { challengeId: challenge.id, title: challenge.title }
     });
 
-    setXp(prev => prev + challenge.xpReward);
-    setWeeklyXp(prev => prev + challenge.xpReward);
-    setLastXpEarned(challenge.xpReward);
-
     if (res.granted) {
-      setGems(res.newBalance);
+      setCompletedDailyChallenges(nextDailyCompletions);
+      if (typeof (res as any).xp === 'number') {
+        setXp((res as any).xp);
+      } else {
+        setXp(prev => prev + challenge.xpReward);
+      }
+      if (typeof (res as any).weekly_xp === 'number') {
+        setWeeklyXp((res as any).weekly_xp);
+      } else {
+        setWeeklyXp(prev => prev + challenge.xpReward);
+      }
+      setLastXpEarned(challenge.xpReward);
+      if (res.newBalance !== undefined) {
+        setGems(res.newBalance);
+      }
       triggerCelebration('challenge_complete', {
         title: '🎉 Challenge Complete!',
         description: `You solved the Daily Challenge: ${challenge.title}!`,
@@ -2243,17 +2440,14 @@ function AppContent() {
           detail: { challengeId: challenge.id }
         }));
       }
+
+      logChallengeCompletion(sessionUser, challenge.id, 100, challenge.xpReward);
+
+      saveProfileUpdates({
+        completed_daily_challenges: nextDailyCompletions
+      });
     }
-
-    logChallengeCompletion(sessionUser, challenge.id, 100, challenge.xpReward);
-
-    saveProfileUpdates({
-      xp: xp + challenge.xpReward,
-      gems: res.newBalance,
-      weekly_xp: weeklyXp + challenge.xpReward,
-      completed_daily_challenges: nextDailyCompletions
-    });
-  }, [completedDailyChallenges, xp, weeklyXp, sessionUser, saveProfileUpdates, triggerCelebration]);
+  }, [completedDailyChallenges, sessionUser, saveProfileUpdates, triggerCelebration]);
 
   const renderView = () => {
     switch (view) {
@@ -2327,8 +2521,9 @@ function AppContent() {
           >
             <Leaderboard 
               leaderboardData={weeklyLeaderboard.map(entry => 
-                entry.isCurrentUser ? { ...entry, xp: gems, name: username || entry.name } : entry
+                entry.isCurrentUser ? { ...entry, xp: weeklyXp, weekly_xp: weeklyXp, name: username || entry.name } : entry
               )} 
+              resetsAt={resetsAt}
             />
           </motion.div>
         );
@@ -3186,6 +3381,10 @@ function AppContent() {
           gems={gems}
           streak={streak}
           energy={energy}
+          xp={xp}
+          weeklyXp={weeklyXp}
+          userRank={userRank}
+          leaderboardData={weeklyLeaderboard}
           accuracy={accuracy}
           completedCount={completedLessons.length}
           bestAnswerStreak={bestAnswerStreak}

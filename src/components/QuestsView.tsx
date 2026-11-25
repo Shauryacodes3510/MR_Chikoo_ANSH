@@ -21,6 +21,9 @@ interface Quest {
   color: string;
 }
 
+// Spin wheel rewards only award cookies and strictly do NOT increment weekly XP
+export const SPIN_XP = 0;
+
 interface QuestsViewProps {
   gems: number;
   streak: number;
@@ -326,6 +329,7 @@ function QuestsView({
                 subtitle="Spin to win bonus rewards!"
                 onClaimReward={async (amount) => {
                   const spinRef = generateSpinReference();
+                  // Wheel rewards only award cookies and strictly do NOT increment weekly XP (SPIN_XP = 0)
                   const claimRes = await rewardService.claimWheelSpin(spinRef, amount);
                   if (claimRes.granted) {
                     onClaimGems(amount, claimRes.newBalance);

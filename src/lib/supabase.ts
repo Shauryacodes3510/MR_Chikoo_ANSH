@@ -1,5 +1,6 @@
 import { logProductionError } from './errorUtils';
 import { createClient } from '@supabase/supabase-js';
+import { LeaderboardEntry } from '../types';
 import { 
   getStoredCompletedLessonIds, 
   saveStoredCompletedLessonsBatch 
@@ -95,6 +96,7 @@ export interface SupabaseUserProfile {
   username: string;
   xp: number;
   weekly_xp: number;
+  weekly_xp_week?: string | null;
   gems: number;
   streak: number;
   energy: number;
@@ -115,6 +117,69 @@ export interface SupabaseUserProfile {
   claimed_rewards?: string[];
   welcome_video_seen?: boolean;
   onboarding_completed?: boolean;
+}
+
+export type UserProfile = SupabaseUserProfile;
+
+/**
+ * Calculates current IST (Indian Standard Time, UTC+5:30) week Monday as 'YYYY-MM-DD'.
+ */
+export function getCurrentISTWeekMonday(): string {
+  const now = new Date();
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(now.getTime() + IST_OFFSET_MS);
+
+  // In IST, day of week: 0 = Sun, 1 = Mon, ..., 6 = Sat
+  const istDay = istDate.getUTCDay();
+  // Days since Monday: if Sun (0), 6 days ago. If Mon (1), 0 days ago. If Tue (2), 1 day ago, etc.
+  const diffToMonday = (istDay + 6) % 7;
+
+  const mondayDate = new Date(istDate.getTime() - diffToMonday * 24 * 60 * 60 * 1000);
+  const year = mondayDate.getUTCFullYear();
+  const month = String(mondayDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(mondayDate.getUTCDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Calculates time remaining until the next Monday 12:00 AM IST (Sunday 18:30 UTC).
+ */
+export function getNextMondayIST(): Date {
+  const now = new Date();
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(now.getTime() + IST_OFFSET_MS);
+
+  const istDay = istDate.getUTCDay();
+  const daysUntilMonday = ((7 - istDay + 1) % 7) || 7;
+
+  const targetYear = istDate.getUTCFullYear();
+  const targetMonth = istDate.getUTCMonth();
+  const targetDate = istDate.getUTCDate() + daysUntilMonday;
+
+  const targetUtcMs = Date.UTC(targetYear, targetMonth, targetDate, 0, 0, 0, 0) - IST_OFFSET_MS;
+  return new Date(targetUtcMs);
+}
+
+/**
+ * Checks if a given week string matches the current IST week Monday.
+ */
+export function isCurrentISTWeek(weekValue: string | null | undefined): boolean {
+  if (!weekValue) return false;
+  const currentMonday = getCurrentISTWeekMonday();
+  const cleanWeek = String(weekValue).trim().slice(0, 10);
+  return cleanWeek === currentMonday;
+}
+
+/**
+ * Computes effective weekly XP with lazy-reset support:
+ * If profile.weekly_xp_week is not equal to current IST week Monday, effective weekly_xp is 0.
+ */
+export function computeEffectiveWeeklyXp(weekly_xp: number | null | undefined, weekly_xp_week: string | null | undefined): number {
+  if (!isCurrentISTWeek(weekly_xp_week)) {
+    return 0;
+  }
+  return Number(weekly_xp ?? 0);
 }
 
 /**
@@ -637,6 +702,7 @@ async function getProfileNoCache(email: string, knownAuthUserId?: string | null)
             username,
             xp,
             weekly_xp,
+            weekly_xp_week,
             gems,
             streak,
             energy,
@@ -663,7 +729,7 @@ async function getProfileNoCache(email: string, knownAuthUserId?: string | null)
           console.warn("[Supabase Warning] Relational join query failed, falling back to simple select:", joinError);
           const { data: fbData, error: fbError } = await supabase!
             .from('profiles')
-            .select('id, email, username, xp, weekly_xp, gems, streak, energy, accuracy, avatar_id, theme_id, best_streak, is_admin, total_chests_claimed, total_steps_claimed, created_at, trophies, last_chest_claimed_at, last_streak_date, completed_lessons, bookmarked_lessons')
+            .select('id, email, username, xp, weekly_xp, weekly_xp_week, gems, streak, energy, accuracy, avatar_id, theme_id, best_streak, is_admin, total_chests_claimed, total_steps_claimed, created_at, trophies, last_chest_claimed_at, last_streak_date, completed_lessons, bookmarked_lessons')
             .eq('id', authUserId)
             .maybeSingle();
           if (fbError) {
@@ -733,7 +799,8 @@ async function getProfileNoCache(email: string, knownAuthUserId?: string | null)
           email: rowData.email || cleanEmail,
           username: rowData.username || cleanEmail.split('@')[0],
           xp: Number(rowData.xp ?? 0),
-          weekly_xp: Number(rowData.weekly_xp ?? 0),
+          weekly_xp: computeEffectiveWeeklyXp(rowData.weekly_xp, rowData.weekly_xp_week),
+          weekly_xp_week: rowData.weekly_xp_week ?? null,
           gems: Number(rowData.gems ?? 0),
           streak: Number(rowData.streak ?? 0),
           energy: Number(rowData.energy ?? 25),
@@ -1168,7 +1235,10 @@ export async function getAllUserProfiles(): Promise<SupabaseUserProfile[]> {
             email: '',
             username: item.username || item.name || 'Explorer',
             xp: Number(item.xp ?? item.gems ?? 0),
-            weekly_xp: Number(item.weekly_xp ?? 0),
+            weekly_xp: item.weekly_xp_week !== undefined
+              ? computeEffectiveWeeklyXp(item.weekly_xp, item.weekly_xp_week)
+              : Number(item.weekly_xp ?? 0),
+            weekly_xp_week: item.weekly_xp_week ?? null,
             gems: Number(item.gems ?? 0),
             streak: Number(item.streak ?? 0),
             energy: Number(item.energy ?? 25),
@@ -1200,7 +1270,7 @@ export async function getAllUserProfiles(): Promise<SupabaseUserProfile[]> {
         console.log("[Supabase Intent] FETCH on table: 'profiles'", { order: 'gems desc' });
         const { data: simpleData, error: simpleError } = await supabase
           .from('profiles')
-          .select('id, email, username, xp, weekly_xp, gems, streak, energy, accuracy, avatar_id, theme_id, best_streak, is_admin, total_chests_claimed, total_steps_claimed, trophies, created_at, last_chest_claimed_at, completed_lessons, bookmarked_lessons')
+          .select('id, email, username, xp, weekly_xp, weekly_xp_week, gems, streak, energy, accuracy, avatar_id, theme_id, best_streak, is_admin, total_chests_claimed, total_steps_claimed, trophies, created_at, last_chest_claimed_at, completed_lessons, bookmarked_lessons')
           .order('gems', { ascending: false });
 
         if (!simpleError && simpleData && simpleData.length > 0) {
@@ -1213,7 +1283,8 @@ export async function getAllUserProfiles(): Promise<SupabaseUserProfile[]> {
             email: item.email,
             username: item.username || (item.email ? item.email.split('@')[0] : 'Explorer'),
             xp: Number(item.xp ?? 0),
-            weekly_xp: Number(item.weekly_xp ?? 0),
+            weekly_xp: computeEffectiveWeeklyXp(item.weekly_xp, item.weekly_xp_week),
+            weekly_xp_week: item.weekly_xp_week ?? null,
             gems: Number(item.gems ?? 0),
             streak: Number(item.streak ?? 0),
             energy: Number(item.energy ?? 25),
@@ -1245,6 +1316,130 @@ export async function getAllUserProfiles(): Promise<SupabaseUserProfile[]> {
     timeoutMs: 3500,
     fallback: []
   });
+}
+
+// -------------------------------------------------------------
+// WEEKLY LEADERBOARD RPC & CACHING (Task P2 & C14)
+// -------------------------------------------------------------
+
+export interface WeeklyLeaderboardResponse {
+  entries: LeaderboardEntry[];
+  resetsAt: string | null;
+}
+
+interface WeeklyLeaderboardCacheEntry {
+  data: WeeklyLeaderboardResponse;
+  timestamp: number;
+}
+
+const weeklyLeaderboardCache: { [limit: number]: WeeklyLeaderboardCacheEntry } = {};
+const LEADERBOARD_CACHE_TTL = 30000; // 30 seconds
+
+/**
+ * Invalidate the in-memory weekly leaderboard cache.
+ */
+export function invalidateWeeklyLeaderboardCache(): void {
+  for (const key of Object.keys(weeklyLeaderboardCache)) {
+    delete weeklyLeaderboardCache[Number(key)];
+  }
+}
+
+/**
+ * Fetches the weekly leaderboard via the `get_weekly_leaderboard` RPC.
+ * - In-memory cache with 30s TTL (`cacheTime = 30000`)
+ * - Returns `{ entries: LeaderboardEntry[], resetsAt: string | null }`
+ * - Maps:
+ *     r_weekly_xp -> xp and weekly_xp
+ *     r_name -> name
+ *     r_is_me -> isCurrentUser
+ *     r_rank -> rank
+ *     r_avatar_id -> avatar
+ *     r_streak -> streak
+ * - Graceful fallback to `/api/database/leaderboard` on RPC failure
+ */
+export async function getWeeklyLeaderboard(
+  limit: number = 100
+): Promise<{ entries: LeaderboardEntry[]; resetsAt: string | null }> {
+  const now = Date.now();
+  const cached = weeklyLeaderboardCache[limit];
+
+  // Return cached result if valid within 30 seconds TTL
+  if (cached && (now - cached.timestamp < LEADERBOARD_CACHE_TTL)) {
+    return cached.data;
+  }
+
+  const resetsAt = getNextMondayIST().toISOString();
+
+  // 1. Try Supabase RPC get_weekly_leaderboard
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.rpc('get_weekly_leaderboard', { p_limit: limit });
+
+      if (error) {
+        throw error;
+      }
+
+      if (Array.isArray(data)) {
+        const entries: LeaderboardEntry[] = data.map((row: any, idx: number) => {
+          const weeklyXp = Number(row.r_weekly_xp ?? row.weekly_xp ?? 0);
+          return {
+            id: row.id || row.r_user_id || row.user_id || `leaderboard_${row.r_rank ?? (idx + 1)}`,
+            name: row.r_name || row.username || `Explorer ${idx + 1}`,
+            xp: weeklyXp,
+            weekly_xp: weeklyXp,
+            rank: Number(row.r_rank ?? (idx + 1)),
+            isCurrentUser: Boolean(row.r_is_me),
+            avatar: row.r_avatar_id ?? row.avatar_id ?? 'user',
+            streak: Number(row.r_streak ?? row.streak ?? 0),
+            joinedDate: Date.now()
+          };
+        });
+
+        const result: WeeklyLeaderboardResponse = { entries, resetsAt };
+        weeklyLeaderboardCache[limit] = { data: result, timestamp: now };
+        return result;
+      }
+    } catch (rpcErr) {
+      console.warn('[Leaderboard] RPC get_weekly_leaderboard failed, falling back to server API endpoint:', rpcErr);
+    }
+  }
+
+  // 2. Fallback gracefully to /api/database/leaderboard
+  try {
+    const apiRes = await fetch('/api/database/leaderboard');
+    if (apiRes.ok) {
+      const json = await apiRes.json();
+      if (json && json.success && Array.isArray(json.leaderboard)) {
+        const entries: LeaderboardEntry[] = json.leaderboard.slice(0, limit).map((item: any, idx: number) => {
+          const weeklyXp = Number(item.weekly_xp ?? item.xp ?? 0);
+          return {
+            id: item.id || `leaderboard_${idx + 1}`,
+            name: item.name || item.username || `Explorer ${idx + 1}`,
+            xp: weeklyXp,
+            weekly_xp: weeklyXp,
+            rank: Number(item.rank ?? (idx + 1)),
+            isCurrentUser: Boolean(item.isCurrentUser),
+            avatar: item.avatar_id || item.avatar || 'user',
+            streak: Number(item.streak ?? 0),
+            joinedDate: item.created_at ? new Date(item.created_at).getTime() : Date.now()
+          };
+        });
+
+        const result: WeeklyLeaderboardResponse = { entries, resetsAt };
+        weeklyLeaderboardCache[limit] = { data: result, timestamp: now };
+        return result;
+      }
+    }
+  } catch (apiErr) {
+    console.warn('[Leaderboard] Fallback API fetch failed:', apiErr);
+  }
+
+  // 3. If both RPC and API fail, return stale cache if present
+  if (cached) {
+    return cached.data;
+  }
+
+  return { entries: [], resetsAt };
 }
 
 // -------------------------------------------------------------

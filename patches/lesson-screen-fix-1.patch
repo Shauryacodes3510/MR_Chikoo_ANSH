@@ -1,0 +1,70 @@
+diff --git a/src/components/LessonSession.tsx b/src/components/LessonSession.tsx
+index 2475cf7..ddb0c51 100644
+--- a/src/components/LessonSession.tsx
++++ b/src/components/LessonSession.tsx
+@@ -189,6 +189,27 @@ export const isReadingChallenge = (challenge?: any): boolean => {
+   );
+ };
+ 
++// Some lessons are saved with plain string lists, but these exercises render/grade {id, text, ...}
++// objects. Convert on load so options/steps are not blank and answers are graded correctly.
++const normalizeChallengeShape = (c: any) => {
++  if (!c) return c;
++  if (c.type === 'c16_eliminate_wrong' && Array.isArray(c.options) && c.options.some((o: any) => typeof o === 'string')) {
++    const answer = String(c.correctAnswer ?? '').trim().toLowerCase();
++    return {
++      ...c,
++      options: c.options.map((o: any, i: number) =>
++        typeof o === 'string'
++          ? { id: `opt_${i}`, text: o, isCorrect: o.trim().toLowerCase() === answer }
++          : o
++      )
++    };
++  }
++  if (c.type === 'c7_sequence_builder' && Array.isArray(c.steps) && c.steps.some((st: any) => typeof st === 'string')) {
++    return { ...c, steps: c.steps.map((st: any) => (typeof st === 'string' ? { id: st, text: st } : st)) };
++  }
++  return c;
++};
++
+ export default function LessonSession({ 
+   lesson, 
+   performance, 
+@@ -214,7 +235,7 @@ export default function LessonSession({
+       const count = idMap.get(baseId) || 0;
+       idMap.set(baseId, count + 1);
+       return {
+-        ...c,
++        ...normalizeChallengeShape(c),
+         id: count === 0 ? baseId : `${baseId}_${count}_${i}`
+       };
+     });
+@@ -1664,6 +1685,11 @@ export default function LessonSession({
+   if (currentChallenge && isStoryScreen(currentChallenge)) {
+     const ch = currentChallenge as any;
+     const rawContentData = ch.contentScreen || ch.visualLessonScreen || {};
++    // Empty strings in the nested object (e.g. mediaUrl: "") must not overwrite the
++    // fallbacks computed from top-level fields (e.g. imageUrl), so drop blanks before spreading.
++    const nonEmptyRawContentData = Object.fromEntries(
++      Object.entries(rawContentData).filter(([, v]) => v !== '' && v !== null && v !== undefined)
++    );
+     const storyContentData = {
+       id: currentChallenge.id,
+       sceneType: rawContentData.sceneType || 
+@@ -1693,6 +1719,7 @@ export default function LessonSession({
+       contentBody: rawContentData.contentBody || 
+                    ch.contentBody || 
+                    (typeof ch.explanation === 'string' ? ch.explanation : ch.explanation?.text) || 
++                   ch.celebrationText || 
+                    ch.content,
+       highlightBox: rawContentData.highlightBox || 
+                     ch.highlightBox,
+@@ -1708,7 +1735,7 @@ export default function LessonSession({
+                 ch.messages,
+       panels: rawContentData.panels || 
+               ch.panels,
+-      ...rawContentData
++      ...nonEmptyRawContentData
+     };
+ 
+     return (

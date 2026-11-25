@@ -39,7 +39,7 @@ export default function ArenaPage({ onBack }: { onBack?: () => void }) {
   const [selectedRival] = useState<RivalProfile>(RIVAL_PROFILES[0]);
   const [isAudioMuted, setIsAudioMuted] = useState(!soundManager.isMusicEnabled());
   const [battleResult, setBattleResult] = useState<ArenaResult | null>(null);
-  const [playerTrophies, setPlayerTrophies] = useState<number>(1420);
+  const [playerTrophies, setPlayerTrophies] = useState<number>(0);
   const [bgLoaded, setBgLoaded] = useState<boolean>(false);
 
   let navContext: any = null;
@@ -79,7 +79,7 @@ export default function ArenaPage({ onBack }: { onBack?: () => void }) {
     try {
       const stats = getBattleStats();
       if (stats && typeof stats.trophies === 'number') {
-        setPlayerTrophies(stats.trophies > 0 ? stats.trophies : 1420);
+        setPlayerTrophies(stats.trophies);
       }
         const pools = getBattlePools();
       let rawList: ArenaQuestion[] = DEFAULT_ARENA_QUESTIONS;
@@ -159,29 +159,30 @@ export default function ArenaPage({ onBack }: { onBack?: () => void }) {
       const stats = getBattleStats();
       const isWin = result.winnerId === 'player' || result.playerScore >= result.opponentScore;
       if (isWin) {
-        const nextTrophies = (stats.trophies || playerTrophies) + (result.trophiesEarned || 30);
+        const currentTrophies = typeof stats?.trophies === 'number' ? stats.trophies : (playerTrophies || 0);
+        const nextTrophies = currentTrophies + (result.trophiesEarned || 30);
         setPlayerTrophies(nextTrophies);
         saveBattleStats({
           ...stats,
-          wins: (stats.wins || 0) + 1,
-          streak: (stats.streak || 0) + 1,
+          wins: (stats?.wins || 0) + 1,
+          streak: (stats?.streak || 0) + 1,
           trophies: nextTrophies,
-          coins: (stats.coins || 0) + result.cookiesEarned,
-          xpEarned: (stats.xpEarned || 0) + result.xpEarned
+          coins: (stats?.coins || 0) + (result.cookiesEarned || 0),
+          xpEarned: (stats?.xpEarned || 0) + (result.xpEarned || 0)
         });
 
-        // 🚀 Sync with Supabase profile: credit trophies & cookies to live account!
-        progressService.updateProfileData({ trophies: nextTrophies });
+        // Direct client updates for trophies/xp/gems are blocked by live DB triggers (Task P7).
+        // Record battle session via verified RPC:
         if (result.cookiesEarned > 0) {
           progressService.recordPracticeSession(result.cookiesEarned, `arena_${Date.now()}`);
         }
       } else {
         saveBattleStats({
           ...stats,
-          losses: (stats.losses || 0) + 1,
+          losses: (stats?.losses || 0) + 1,
           streak: 0,
-          coins: (stats.coins || 0) + result.cookiesEarned,
-          xpEarned: (stats.xpEarned || 0) + result.xpEarned
+          coins: (stats?.coins || 0) + (result.cookiesEarned || 0),
+          xpEarned: (stats?.xpEarned || 0) + (result.xpEarned || 0)
         });
       }
     } catch (e) {

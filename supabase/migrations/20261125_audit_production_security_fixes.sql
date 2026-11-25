@@ -282,11 +282,10 @@ BEGIN
     INSERT INTO public.spin_wheel_claims (user_id, spin_reference, reward_gems)
     VALUES (v_uid::text, v_ref, v_amount);
 
-    -- Credit user profile
+    -- Credit user profile (spin awards cookies only, NOT weekly XP)
     PERFORM set_config('app.trusted_reward_write', 'on', TRUE);
     UPDATE public.profiles
-       SET gems = gems + v_amount,
-           weekly_xp = weekly_xp + v_amount
+       SET gems = gems + v_amount
      WHERE id = v_uid
     RETURNING gems INTO v_balance;
     PERFORM set_config('app.trusted_reward_write', 'off', TRUE);

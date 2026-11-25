@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Sparkles, CheckCircle2, Clock, ArrowRight, X, 
-  Copy, Trophy, ChevronDown, Check, ExternalLink, ArrowLeft
+  Copy, Trophy, ChevronDown, Check, ExternalLink, ArrowLeft,
+  AlertCircle
 } from 'lucide-react';
 import cookiesIcon from '@/cookies.webp';
 import { soundManager } from '../lib/sounds';
@@ -271,6 +272,17 @@ export default function AIMissions({ onClaimCookies, onQuestDetailsToggle }: AIM
   const [wonCookieAmount, setWonCookieAmount] = useState<number>(0);
   const [activeSpinReference, setActiveSpinReference] = useState<string>('');
   const [showCatalog, setShowCatalog] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Auto-dismiss spin reward error toast after 5 seconds
+  useEffect(() => {
+    if (errorMessage) {
+      const timer = setTimeout(() => {
+        setErrorMessage(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [errorMessage]);
 
   // Load completed and unlocked missions from Supabase profile and database state
   useEffect(() => {
@@ -364,13 +376,12 @@ export default function AIMissions({ onClaimCookies, onQuestDetailsToggle }: AIM
         if (onClaimCookies) {
           onClaimCookies(wonAmount);
         }
+      } else {
+        setErrorMessage("Could not claim spin reward. Please check your connection and try again.");
       }
     } catch (err) {
       console.warn('[AIMissions] Spin reward claim error:', err);
-      // Fallback: award spin cookies once
-      if (onClaimCookies) {
-        onClaimCookies(wonAmount);
-      }
+      setErrorMessage("Could not claim spin reward. Please check your connection and try again.");
     }
 
     // Step 1: Show Challenge Unlocked celebration
@@ -449,7 +460,30 @@ export default function AIMissions({ onClaimCookies, onQuestDetailsToggle }: AIM
   };
 
   return (
-    <div className="w-full space-y-6 text-left max-w-2xl mx-auto pb-10 font-sans">
+    <div className="w-full space-y-6 text-left max-w-2xl mx-auto pb-10 font-sans relative">
+      {/* Toast Error Alert */}
+      <AnimatePresence>
+        {errorMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-5 left-1/2 -translate-x-1/2 z-[9999999] max-w-md w-[92%] sm:w-auto bg-rose-600 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-3 border border-rose-400 font-sans"
+          >
+            <div className="flex items-center gap-2.5 text-xs sm:text-sm font-bold">
+              <AlertCircle size={18} className="shrink-0 text-rose-200" />
+              <span>{errorMessage}</span>
+            </div>
+            <button
+              onClick={() => setErrorMessage(null)}
+              className="p-1 hover:bg-rose-700 rounded-lg transition-colors cursor-pointer shrink-0 text-white/80 hover:text-white"
+              aria-label="Close error"
+            >
+              <X size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       {/* 1. COOKIE WHEEL BANNER & INTERACTIVE SPIN ASSEMBLY */}
       <div className="w-full flex items-center justify-center pt-[20px] pb-2">

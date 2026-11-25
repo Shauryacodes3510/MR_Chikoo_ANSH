@@ -29,6 +29,17 @@ interface DesktopRightPanelProps {
   gems: number;
   streak: number;
   energy: number;
+  xp?: number;
+  weeklyXp?: number;
+  userRank?: number;
+  leaderboardData?: Array<{
+    id: string;
+    name: string;
+    xp: number;
+    weekly_xp?: number;
+    rank?: number;
+    isCurrentUser?: boolean;
+  }>;
   accuracy?: number;
   completedCount?: number;
   bestAnswerStreak?: number;
@@ -45,6 +56,10 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
   gems,
   streak,
   energy,
+  xp = 0,
+  weeklyXp,
+  userRank,
+  leaderboardData = [],
   accuracy = 0.85,
   completedCount = 0,
   bestAnswerStreak = 0,
@@ -209,20 +224,20 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
             <LanguageSelector variant="compact" />
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-1.5">
             {/* Cookies Pill */}
             <div 
               onClick={() => {
                 soundManager.play('click');
                 setView('rewards_store');
               }}
-              className="p-2.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 hover:border-amber-300 dark:hover:border-amber-600 transition-all cursor-pointer group flex flex-col items-center justify-center text-center shadow-xs hover:shadow-sm"
+              className="p-2 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 hover:border-amber-300 dark:hover:border-amber-600 transition-all cursor-pointer group flex flex-col items-center justify-center text-center shadow-xs hover:shadow-sm"
               title="Click to visit Rewards Store"
             >
               <img 
                 src={cookiesIcon} 
                 alt="Cookies" 
-                className="w-6 h-6 object-contain mb-1 group-hover:scale-110 transition-transform duration-150"
+                className="w-5 h-5 sm:w-6 sm:h-6 object-contain mb-1 group-hover:scale-110 transition-transform duration-150"
               />
               <span className="font-display font-black text-xs text-amber-900 dark:text-amber-200 leading-tight">
                 {gems.toLocaleString()}
@@ -232,12 +247,32 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
               </span>
             </div>
 
+            {/* Weekly XP / XP Pill (Competitive League Progress - Zap Icon, distinct from Cookies) */}
+            <div 
+              onClick={() => {
+                soundManager.play('click');
+                setView('leaderboard');
+              }}
+              className="p-2 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-900/50 hover:border-indigo-300 dark:hover:border-indigo-600 transition-all cursor-pointer group flex flex-col items-center justify-center text-center shadow-xs hover:shadow-sm"
+              title="Click to view Cosmic Leaderboard"
+            >
+              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/60 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mb-1 group-hover:scale-110 transition-transform duration-150">
+                <Zap size={13} className="fill-indigo-500 text-indigo-500" />
+              </div>
+              <span className="font-display font-black text-xs text-indigo-900 dark:text-indigo-200 leading-tight">
+                {(weeklyXp !== undefined ? weeklyXp : xp).toLocaleString()}
+              </span>
+              <span className="text-[9px] font-bold text-indigo-700/80 dark:text-indigo-400 uppercase tracking-tight">
+                {weeklyXp !== undefined ? t('common.weekly_xp', 'Weekly XP') : t('common.xp', 'XP')}
+              </span>
+            </div>
+
             {/* Streak Pill */}
-            <div className="p-2.5 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-900/50 transition-all flex flex-col items-center justify-center text-center shadow-xs">
+            <div className="p-2 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-900/50 transition-all flex flex-col items-center justify-center text-center shadow-xs">
               <img 
                 src={streakIcon} 
                 alt="Streak" 
-                className="w-6 h-6 object-contain mb-1"
+                className="w-5 h-5 sm:w-6 sm:h-6 object-contain mb-1"
               />
               <span className="font-display font-black text-xs text-rose-900 dark:text-rose-200 leading-tight">
                 {streak} {streak === 1 ? t('common.day', 'Day') : t('common.days', 'Days')}
@@ -253,10 +288,10 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
               role="button"
               tabIndex={0}
               title="Click to view or refill hearts"
-              className="p-2.5 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-900/50 transition-all flex flex-col items-center justify-center text-center shadow-xs cursor-pointer hover:scale-105 active:scale-95 group"
+              className="p-2 rounded-2xl bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-900/50 transition-all flex flex-col items-center justify-center text-center shadow-xs cursor-pointer hover:scale-105 active:scale-95 group"
             >
-              <div className="w-6 h-6 rounded-full bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center text-rose-600 dark:text-rose-400 mb-1 group-hover:scale-110 transition-transform">
-                <Heart size={14} className="fill-rose-500 text-rose-500" />
+              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center text-rose-600 dark:text-rose-400 mb-1 group-hover:scale-110 transition-transform">
+                <Heart size={13} className="fill-rose-500 text-rose-500" />
               </div>
               <span className="font-display font-black text-xs text-rose-900 dark:text-rose-200 leading-tight">
                 {Math.min(5, Math.ceil(energy / 5))}/5
@@ -344,6 +379,68 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
             </motion.button>
           </div>
         </div>
+
+        {/* 4. WEEKLY LEAGUE / MINI-LEADERBOARD PREVIEW */}
+        {leaderboardData && leaderboardData.length > 0 && (
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Trophy size={15} className="text-amber-500" />
+                <h3 className="font-display font-black text-sm text-slate-800 dark:text-white">
+                  {t('leaderboard.weekly_league', 'Weekly League')}
+                </h3>
+              </div>
+
+              <button
+                onClick={() => {
+                  soundManager.play('click');
+                  setView('leaderboard');
+                }}
+                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
+              >
+                <span>{t('quests.view_all', 'View All')}</span>
+                <ChevronRight size={12} />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#172033] border border-slate-200/70 dark:border-slate-800 space-y-1.5">
+              {leaderboardData.slice(0, 3).map((player, idx) => {
+                const playerXp = Number(player.weekly_xp !== undefined ? player.weekly_xp : (player.xp ?? 0));
+                const rankNumber = player.rank || idx + 1;
+                return (
+                  <div
+                    key={player.id || `mini-rank-${idx}`}
+                    className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl transition-colors ${
+                      player.isCurrentUser ? 'bg-amber-100/70 dark:bg-amber-950/40 border border-amber-300/60 dark:border-amber-600/40' : 'hover:bg-slate-100/60 dark:hover:bg-[#1f2b45]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
+                        rankNumber === 1
+                          ? 'bg-amber-400 text-slate-950 shadow-2xs'
+                          : rankNumber === 2
+                          ? 'bg-slate-300 dark:bg-slate-600 text-slate-800 dark:text-slate-100'
+                          : rankNumber === 3
+                          ? 'bg-amber-700/80 text-amber-100'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}>
+                        {rankNumber}
+                      </span>
+                      <span className="font-display font-bold text-xs text-slate-800 dark:text-slate-100 truncate">
+                        {player.name}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0 font-mono text-xs font-bold text-amber-600 dark:text-amber-400">
+                      <Zap size={11} className="fill-amber-500 text-amber-500" />
+                      <span>{playerXp.toLocaleString()} XP</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* 4. ACTIVE DAILY QUESTS */}
         <div className="space-y-2.5">

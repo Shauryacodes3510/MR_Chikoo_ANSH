@@ -43,6 +43,9 @@ export interface GrantRewardResult {
   newBalance: number;
   claimId: string;
   message: string;
+  xp?: number;
+  weekly_xp?: number;
+  gems?: number;
 }
 
 export type RewardEventListener = (result: GrantRewardResult) => void;
@@ -153,7 +156,10 @@ class RewardService {
           amount: res.amount,
           newBalance: res.newBalance,
           claimId: spinRef,
-          message: res.message
+          message: res.message,
+          xp: 0,
+          weekly_xp: (res as any).weekly_xp ?? 0,
+          gems: (res as any).gems ?? res.newBalance
         };
         if (res.granted) {
           this.notifyListeners(result);
@@ -168,7 +174,10 @@ class RewardService {
           amount: res.amount,
           newBalance: res.newBalance,
           claimId: cleanClaimId,
-          message: res.message
+          message: res.message,
+          xp: (res as any).xp,
+          weekly_xp: (res as any).weekly_xp,
+          gems: (res as any).gems ?? res.newBalance
         };
         if (res.granted) {
           this.notifyListeners(result);
@@ -219,10 +228,29 @@ class RewardService {
     });
 
     if (result.granted) {
-      await progressService.updateProfileData({
+      const profileUpdates: Partial<SupabaseUserProfile> = {
         last_chest_claimed_at: new Date().toISOString(),
         total_chests_claimed: (progressService.getProfile()?.total_chests_claimed || 0) + 1
-      });
+      };
+
+      if (result.weekly_xp !== undefined) {
+        profileUpdates.weekly_xp = result.weekly_xp;
+      }
+      if (result.xp !== undefined) {
+        profileUpdates.xp = result.xp;
+      }
+      if (result.gems !== undefined) {
+        profileUpdates.gems = result.gems;
+      } else if (result.newBalance !== undefined) {
+        profileUpdates.gems = result.newBalance;
+      }
+
+      // Ensure progressService receives server-returned weekly_xp and xp
+      if (typeof (progressService as any).updateProfile === 'function') {
+        await (progressService as any).updateProfile(profileUpdates);
+      } else {
+        await progressService.updateProfileData(profileUpdates);
+      }
     }
 
     return result;
@@ -257,6 +285,7 @@ class RewardService {
 
   /**
    * Claim a Lucky Cookie Wheel Spin reward with unique spin_reference.
+   * Awards Cookies only and does NOT add weekly XP (spins give 0 weekly XP).
    */
   async claimWheelSpin(spinId?: string, amount: number = 100, sliceInfo?: any): Promise<GrantRewardResult> {
     const uniqueSpinRef = spinId ? (spinId.startsWith('spin_') ? spinId : `spin_${spinId}`) : generateSpinReference();
@@ -264,6 +293,7 @@ class RewardService {
       claimId: uniqueSpinRef,
       amount,
       rewardType: 'wheel_spin',
+      xpReward: 0,
       metadata: { sliceInfo, spinReference: uniqueSpinRef }
     });
   }

@@ -10,6 +10,47 @@ import { Chapter, MCQ } from '../lib/curriculumTypes';
 import { soundManager } from '../lib/sounds';
 import { domTranslator } from '../lib/translation/domTranslator';
 import { getAdminAuthHeaders } from '../lib/supabase';
+import { normalizeProgressEmail } from '../lib/lessonProgressStorage';
+
+interface StudyHubRewardState {
+  activityRewarded: boolean;
+  chestClaimed: boolean;
+}
+
+function getStudyHubRewardKey(lessonId: string): string {
+  const user = normalizeProgressEmail();
+  return `chikoo_study_hub_rewards_${user}_${lessonId}`;
+}
+
+function getPersistedStudyHubRewards(lessonId: string): StudyHubRewardState {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return { activityRewarded: false, chestClaimed: false };
+  }
+  try {
+    const raw = localStorage.getItem(getStudyHubRewardKey(lessonId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        activityRewarded: Boolean(parsed.activityRewarded),
+        chestClaimed: Boolean(parsed.chestClaimed)
+      };
+    }
+  } catch (err) {
+    console.warn('[StudyHub] Failed to read persisted rewards:', err);
+  }
+  return { activityRewarded: false, chestClaimed: false };
+}
+
+function persistStudyHubReward(lessonId: string, updates: Partial<StudyHubRewardState>) {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+  try {
+    const current = getPersistedStudyHubRewards(lessonId);
+    const updated = { ...current, ...updates };
+    localStorage.setItem(getStudyHubRewardKey(lessonId), JSON.stringify(updated));
+  } catch (err) {
+    console.warn('[StudyHub] Failed to persist rewards:', err);
+  }
+}
 
 interface LessonStudyHubProps {
   lessonId: string;
@@ -46,11 +87,22 @@ export default function LessonStudyHub({
   const [challengeAttempts, setChallengeAttempts] = useState(0);
   const [isCorrectSelection, setIsCorrectSelection] = useState<boolean | null>(null);
   
-  // Game state
-  const [isChestOpened, setIsChestOpened] = useState(false);
-  const [xpClaimed, setXpClaimed] = useState(false);
-  const [activityXpRewarded, setActivityXpRewarded] = useState(false);
+  // Game state with persistent reward tracking to prevent duplicate XP on remount
+  const initialRewards = getPersistedStudyHubRewards(lessonId);
+  const [isChestOpened, setIsChestOpened] = useState<boolean>(initialRewards.chestClaimed);
+  const [xpClaimed, setXpClaimed] = useState<boolean>(initialRewards.chestClaimed);
+  const [activityXpRewarded, setActivityXpRewarded] = useState<boolean>(initialRewards.activityRewarded);
   const [showTutorChat, setShowTutorChat] = useState(false);
+
+  // Sync reward states if lessonId changes
+  useEffect(() => {
+    const saved = getPersistedStudyHubRewards(lessonId);
+    setActivityXpRewarded(saved.activityRewarded);
+    setXpClaimed(saved.chestClaimed);
+    if (saved.chestClaimed) {
+      setIsChestOpened(true);
+    }
+  }, [lessonId]);
 
   // Tutor chat states
   // Tutor chat states
@@ -463,16 +515,22 @@ export default function LessonStudyHub({
                   <button
                     onClick={() => {
                       if (!activityXpRewarded) {
-                        soundManager.play('complete');
-                        if (onEarnXp) onEarnXp(10);
-                        setActivityXpRewarded(true);
+                        const verified = getPersistedStudyHubRewards(lessonId);
+                        if (!verified.activityRewarded) {
+                          soundManager.play('complete');
+                          persistStudyHubReward(lessonId, { activityRewarded: true });
+                          setActivityXpRewarded(true);
+                          if (onEarnXp) onEarnXp(10);
+                        } else {
+                          setActivityXpRewarded(true);
+                        }
                       }
                     }}
                     disabled={activityXpRewarded}
-                    className={`font-black text-[10px] uppercase px-3 py-2 rounded-xl border-b-2 shadow-sm transition-all cursor-pointer ${
+                    className={`font-black text-[10px] uppercase px-3 py-2 rounded-xl border-b-2 shadow-sm transition-all ${
                       activityXpRewarded 
                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-300 dark:border-slate-700 shadow-none cursor-default' 
-                        : 'bg-yellow-400 border-yellow-600 text-yellow-950 hover:bg-yellow-500'
+                        : 'bg-yellow-400 border-yellow-600 text-yellow-950 hover:bg-yellow-500 cursor-pointer'
                     }`}
                   >
                     {activityXpRewarded ? 'Claimed ✓' : 'Claim +10 Cookies'}
@@ -637,9 +695,13 @@ export default function LessonStudyHub({
               >
                 <div className="space-y-1.5">
                   <span className="text-amber-500 text-xs font-black uppercase tracking-wider block">MISSION CHEST ACHIEVED!</span>
-                  <h3 className="text-xl font-black text-indigo-950 dark:text-white">Tap to Claim Dopamine!</h3>
+                  <h3 className="text-xl font-black text-indigo-950 dark:text-white">
+                    {xpClaimed ? 'Reward Already Collected!' : 'Tap to Claim Dopamine!'}
+                  </h3>
                   <p className="text-[11px] text-gray-500 dark:text-slate-300 max-w-[260px] mx-auto leading-relaxed">
-                    You validated the concept and interactive visuals. Open the mysterious chest to claim your progress tokens!
+                    {xpClaimed 
+                      ? 'You unlocked this chest and claimed your progress tokens for this mission.' 
+                      : 'You validated the concept and interactive visuals. Open the mysterious chest to claim your progress tokens!'}
                   </p>
                 </div>
 
@@ -654,16 +716,26 @@ export default function LessonStudyHub({
                   
                   <button
                     onClick={() => {
-                      if (!isChestOpened) {
-                        soundManager.play('complete');
-                        setIsChestOpened(true);
-                        if (onEarnXp && !xpClaimed) {
-                          onEarnXp(30);
+                      if (!isChestOpened && !xpClaimed) {
+                        const verified = getPersistedStudyHubRewards(lessonId);
+                        if (!verified.chestClaimed) {
+                          soundManager.play('complete');
+                          setIsChestOpened(true);
+                          setXpClaimed(true);
+                          persistStudyHubReward(lessonId, { chestClaimed: true });
+                          if (onEarnXp) {
+                            onEarnXp(30);
+                          }
+                        } else {
+                          setIsChestOpened(true);
                           setXpClaimed(true);
                         }
                       }
                     }}
-                    className="cursor-pointer active:scale-95 transition-transform text-7xl select-none"
+                    disabled={isChestOpened || xpClaimed}
+                    className={`transition-transform text-7xl select-none ${
+                      isChestOpened || xpClaimed ? 'cursor-default' : 'cursor-pointer active:scale-95'
+                    }`}
                   >
                     {isChestOpened ? '🔓✨🎒' : '📦🔒'}
                   </button>

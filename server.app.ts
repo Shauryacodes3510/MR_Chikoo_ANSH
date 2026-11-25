@@ -469,11 +469,10 @@ async function startServer() {
         return res.status(503).json({ success: false, error: "Database not configured" });
       }
 
-      const [modulesRes, lessonsRes, rewardsRes, profilesRes] = await Promise.all([
+      const [modulesRes, lessonsRes, rewardsRes] = await Promise.all([
         client.from("modules").select("*").order("order", { ascending: true }),
         client.from("lessons").select("*").order("order_index", { ascending: true }),
-        client.from("rewards").select("*").order("id", { ascending: true }),
-        client.from("profiles").select("id, email, username, xp, weekly_xp, gems, streak, energy, avatar_id, theme_id, created_at").order("gems", { ascending: false }).limit(500)
+        client.from("rewards").select("*").order("id", { ascending: true })
       ]);
 
       let modulesData = modulesRes.data || [];
@@ -521,8 +520,7 @@ async function startServer() {
         success: true,
         modules: modulesData,
         lessons: lessonsData,
-        rewards: formattedRewards,
-        leaderboard: profilesRes.data || []
+        rewards: formattedRewards
       });
     } catch (err: any) {
       console.error("[Database Bootstrap Error]:", err);
@@ -1342,7 +1340,7 @@ Strict Requirements:
       const { data, error } = await client
         .from("profiles")
         .select("username, xp, weekly_xp, gems, streak, energy, avatar_id, theme_id, created_at")
-        .order("gems", { ascending: false })
+        .order("weekly_xp", { ascending: false })
         .limit(500);
 
       if (error) {
@@ -1362,7 +1360,7 @@ Strict Requirements:
           id: `player_${index + 1}`,
           username: safeName,
           name: safeName,
-          xp: Number(row.gems ?? row.xp ?? 0),
+          xp: Number(row.weekly_xp ?? 0),
           gems: Number(row.gems ?? 0),
           weekly_xp: Number(row.weekly_xp ?? 0),
           streak: Number(row.streak ?? 0),

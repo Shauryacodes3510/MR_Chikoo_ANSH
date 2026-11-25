@@ -4092,11 +4092,10 @@ async function startServer() {
       if (!client) {
         return res.status(503).json({ success: false, error: "Database not configured" });
       }
-      const [modulesRes, lessonsRes, rewardsRes, profilesRes] = await Promise.all([
+      const [modulesRes, lessonsRes, rewardsRes] = await Promise.all([
         client.from("modules").select("*").order("order", { ascending: true }),
         client.from("lessons").select("*").order("order_index", { ascending: true }),
-        client.from("rewards").select("*").order("id", { ascending: true }),
-        client.from("profiles").select("id, email, username, xp, weekly_xp, gems, streak, energy, avatar_id, theme_id, created_at").order("gems", { ascending: false }).limit(500)
+        client.from("rewards").select("*").order("id", { ascending: true })
       ]);
       let modulesData = modulesRes.data || [];
       if (modulesRes.error) {
@@ -4140,8 +4139,7 @@ async function startServer() {
         success: true,
         modules: modulesData,
         lessons: lessonsData,
-        rewards: formattedRewards,
-        leaderboard: profilesRes.data || []
+        rewards: formattedRewards
       });
     } catch (err) {
       console.error("[Database Bootstrap Error]:", err);
@@ -4796,7 +4794,7 @@ Strict Requirements:
       if (!client) {
         return res.status(503).json({ success: false, error: "Database not configured" });
       }
-      const { data, error } = await client.from("profiles").select("username, xp, weekly_xp, gems, streak, energy, avatar_id, theme_id, created_at").order("gems", { ascending: false }).limit(500);
+      const { data, error } = await client.from("profiles").select("username, xp, weekly_xp, gems, streak, energy, avatar_id, theme_id, created_at").order("weekly_xp", { ascending: false }).limit(500);
       if (error) {
         throw error;
       }
@@ -4810,7 +4808,7 @@ Strict Requirements:
           id: `player_${index + 1}`,
           username: safeName,
           name: safeName,
-          xp: Number(row.gems ?? row.xp ?? 0),
+          xp: Number(row.weekly_xp ?? 0),
           gems: Number(row.gems ?? 0),
           weekly_xp: Number(row.weekly_xp ?? 0),
           streak: Number(row.streak ?? 0),
@@ -7435,6 +7433,7 @@ Return your response as a JSON object with a single "messages" field which is an
     try {
       const { email, userId } = req.body || {};
       const identifier = email || userId || "anonymous";
+      let consumeResult = null;
       const sb = getSupabaseServer();
       if (sb) {
         try {
@@ -7443,14 +7442,53 @@ Return your response as a JSON object with a single "messages" field which is an
             p_email: email || null
           });
           if (!rpcRes.error && rpcRes.data) {
-            return res.json(rpcRes.data);
+            consumeResult = rpcRes.data;
           }
         } catch (sbErr) {
-          console.warn("[Server Spin Consume] Supabase RPC fallback note:", sbErr);
+          console.warn("[Server Spin Consume] RPC fallback note:", sbErr);
         }
       }
-      const result = await consumeDailySpinWheel(identifier);
-      res.json(result);
+      if (!consumeResult) {
+        consumeResult = await consumeDailySpinWheel(identifier);
+      }
+      if (!consumeResult.consumed && !consumeResult.success) {
+        return res.json(consumeResult);
+      }
+      const rand = Math.random() * 100;
+      let winningIndex = 0;
+      let amount = 50;
+      if (rand < 5) {
+        winningIndex = 7;
+        amount = 1e3;
+      } else if (rand < 15) {
+        winningIndex = 6;
+        amount = 500;
+      } else if (rand < 23) {
+        winningIndex = 5;
+        amount = 300;
+      } else if (rand < 35) {
+        winningIndex = 4;
+        amount = 250;
+      } else if (rand < 50) {
+        winningIndex = 3;
+        amount = 200;
+      } else if (rand < 70) {
+        winningIndex = 2;
+        amount = 150;
+      } else if (rand < 90) {
+        winningIndex = 1;
+        amount = 100;
+      } else {
+        winningIndex = 0;
+        amount = 50;
+      }
+      const spinReference = `spin_srv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      res.json({
+        ...consumeResult,
+        winningIndex,
+        amount,
+        spinReference
+      });
     } catch (err) {
       console.error("[Server Spin Consume Error]:", err);
       res.status(500).json({ error: err.message || "Failed to consume spin token." });

@@ -9,6 +9,11 @@ export interface CompleteChallengeRpcResult {
   newBalance: number;
   challengeId: string;
   message: string;
+  success?: boolean;
+  weekly_xp?: number;
+  xp?: number;
+  gems?: number;
+  new_balance?: number;
 }
 
 export interface ClaimSpinRewardRpcResult {
@@ -310,12 +315,19 @@ export async function rpcCompleteChallenge(
       alreadyClaimed: true,
       amount: 0,
       newBalance: currentGems,
+      new_balance: currentGems,
+      gems: currentGems,
+      xp: currentProfile.xp,
+      weekly_xp: currentProfile.weekly_xp,
       challengeId: cleanId,
       message: `Challenge '${cleanId}' was already completed and awarded.`
     };
   }
 
   let confirmedBalance = currentGems;
+  let confirmedWeeklyXp: number | undefined = currentProfile.weekly_xp;
+  let confirmedXp: number | undefined = currentProfile.xp;
+  let confirmedGems: number = currentGems;
   let rpcSucceeded = false;
   let alreadyCompletedOnServer = false;
 
@@ -323,24 +335,25 @@ export async function rpcCompleteChallenge(
     try {
       // Try calling the complete_challenge RPC on Supabase Postgres
       // Try parameter signatures:
-      // 1. Matches public.complete_challenge(p_challenge_id, p_metadata, p_reward_amount)
+      // 1. Matches canonical public.complete_challenge(p_challenge_id, p_reward_gems, p_xp_reward, p_email)
       let rpcRes = await supabase.rpc('complete_challenge', {
         p_challenge_id: cleanId,
-        p_metadata: { xp_reward: safeXp, email: activeEmail },
-        p_reward_amount: safeReward
+        p_reward_gems: safeReward,
+        p_xp_reward: safeXp,
+        p_email: activeEmail
       });
 
-      if (rpcRes.error && (rpcRes.error.message.includes('function') || rpcRes.error.code === '42883' || rpcRes.error.message.includes('parameter') || rpcRes.error.code === 'PGRST202')) {
-        // 2. Alternative parameter signature
+      if (rpcRes.error && (rpcRes.error.message?.includes('function') || rpcRes.error.code === '42883' || rpcRes.error.message?.includes('parameter') || rpcRes.error.code === 'PGRST202')) {
+        // 2. Overload signature with p_metadata and p_reward_amount, ensuring p_xp_reward is provided
         rpcRes = await supabase.rpc('complete_challenge', {
           p_challenge_id: cleanId,
-          p_reward_gems: safeReward,
-          p_xp_reward: safeXp,
-          p_email: activeEmail
+          p_metadata: { xp_reward: safeXp, email: activeEmail },
+          p_reward_amount: safeReward,
+          p_xp_reward: safeXp
         });
       }
 
-      if (rpcRes.error && (rpcRes.error.message.includes('function') || rpcRes.error.code === '42883' || rpcRes.error.message.includes('parameter') || rpcRes.error.code === 'PGRST202')) {
+      if (rpcRes.error && (rpcRes.error.message?.includes('function') || rpcRes.error.code === '42883' || rpcRes.error.message?.includes('parameter') || rpcRes.error.code === 'PGRST202')) {
         // 3. Unprefixed parameter names
         rpcRes = await supabase.rpc('complete_challenge', {
           challenge_id: cleanId,
@@ -352,16 +365,33 @@ export async function rpcCompleteChallenge(
 
       if (!rpcRes.error && rpcRes.data !== null && rpcRes.data !== undefined) {
         rpcSucceeded = true;
-        const resData = rpcRes.data;
+        const resData: any = rpcRes.data;
 
         // Check if server indicated duplicate
         if (typeof resData === 'object' && (resData.already_completed || resData.already_claimed || resData.granted === false)) {
           alreadyCompletedOnServer = true;
           confirmedBalance = Number(resData.new_balance ?? resData.gems ?? currentGems);
+          confirmedGems = resData.gems !== undefined ? Number(resData.gems) : confirmedBalance;
+          if (resData.weekly_xp !== undefined) confirmedWeeklyXp = Number(resData.weekly_xp);
+          if (resData.xp !== undefined) confirmedXp = Number(resData.xp);
         } else if (typeof resData === 'number') {
           confirmedBalance = resData;
-        } else if (typeof resData === 'object' && (resData.new_balance !== undefined || resData.gems !== undefined)) {
-          confirmedBalance = Number(resData.new_balance ?? resData.gems);
+          confirmedGems = resData;
+        } else if (typeof resData === 'object') {
+          if (resData.new_balance !== undefined || resData.gems !== undefined) {
+            confirmedBalance = Number(resData.new_balance ?? resData.gems);
+          }
+          if (resData.gems !== undefined) {
+            confirmedGems = Number(resData.gems);
+          } else if (resData.new_balance !== undefined) {
+            confirmedGems = Number(resData.new_balance);
+          }
+          if (resData.weekly_xp !== undefined) {
+            confirmedWeeklyXp = Number(resData.weekly_xp);
+          }
+          if (resData.xp !== undefined) {
+            confirmedXp = Number(resData.xp);
+          }
         }
       } else if (rpcRes.error) {
         console.warn('[Rewards] Supabase RPC complete_challenge notice:', rpcRes.error.message);
@@ -374,10 +404,15 @@ export async function rpcCompleteChallenge(
   if (alreadyCompletedOnServer) {
     console.log('[Rewards] Duplicate claim blocked:', cleanId);
     return {
+      success: false,
       granted: false,
       alreadyClaimed: true,
       amount: 0,
       newBalance: confirmedBalance,
+      new_balance: confirmedBalance,
+      gems: confirmedGems,
+      xp: confirmedXp,
+      weekly_xp: confirmedWeeklyXp,
       challengeId: cleanId,
       message: `Challenge '${cleanId}' was already completed on server.`
     };
@@ -395,27 +430,34 @@ export async function rpcCompleteChallenge(
           alreadyClaimed: true,
           amount: 0,
           newBalance: freshProfile.gems || 0,
+          new_balance: freshProfile.gems || 0,
+          gems: freshProfile.gems || 0,
+          xp: freshProfile.xp,
+          weekly_xp: freshProfile.weekly_xp,
           challengeId: cleanId,
           message: `Challenge '${cleanId}' was already completed.`
         };
       }
 
-      const nextGems = (freshProfile.gems || 0) + safeReward;
-      const nextWeeklyXp = (freshProfile.weekly_xp || 0) + safeReward;
       const nextClaimed = [...freshClaimed, claimKey];
       const nextChallenges = Array.from(new Set([...(freshProfile.completed_daily_challenges || []), cleanId]));
 
+      // Note: Direct client writes to privileged fields (gems, weekly_xp, xp) are silently reverted
+      // by database security trigger 'trg_protect_profile_privileged_fields'. Only non-privileged
+      // tracking columns may be updated directly.
       const updated = await updateProfile(activeEmail, {
-        gems: nextGems,
-        weekly_xp: nextWeeklyXp,
         claimed_rewards: nextClaimed,
         completed_daily_challenges: nextChallenges
       });
 
-      confirmedBalance = updated.gems;
+      confirmedBalance = updated.gems ?? freshProfile.gems ?? currentGems;
+      confirmedGems = confirmedBalance;
+      confirmedWeeklyXp = updated.weekly_xp ?? freshProfile.weekly_xp;
+      confirmedXp = updated.xp ?? freshProfile.xp;
     } catch (err) {
-      console.error('[Rewards] Failed to persist challenge reward to database:', err);
-      confirmedBalance = currentGems + safeReward;
+      console.error('[Rewards] Failed to persist challenge claim tracking to database:', err);
+      confirmedBalance = currentGems;
+      confirmedGems = currentGems;
     }
   }
 
@@ -427,17 +469,29 @@ export async function rpcCompleteChallenge(
   console.log('[Rewards] Database balance:', confirmedBalance);
 
   // Re-sync user profile from Supabase so displayed balance strictly reflects database
-  progressService.updateProfileLocally({
+  const localUpdates: any = {
     gems: confirmedBalance,
     claimed_rewards: Array.from(new Set([...claimedList, claimKey, cleanId]))
-  });
+  };
+  if (confirmedWeeklyXp !== undefined) {
+    localUpdates.weekly_xp = confirmedWeeklyXp;
+  }
+  if (confirmedXp !== undefined) {
+    localUpdates.xp = confirmedXp;
+  }
+  progressService.updateProfileLocally(localUpdates);
   console.log('[Rewards] UI balance updated:', confirmedBalance);
 
   return {
+    success: true,
     granted: true,
     alreadyClaimed: false,
     amount: safeReward,
     newBalance: confirmedBalance,
+    new_balance: confirmedBalance,
+    gems: confirmedGems,
+    xp: confirmedXp,
+    weekly_xp: confirmedWeeklyXp,
     challengeId: cleanId,
     message: `+${safeReward} Cookies awarded!`
   };
@@ -613,13 +667,12 @@ export async function rpcClaimSpinReward(
         };
       }
 
-      const nextGems = (freshProfile.gems || 0) + safeReward;
-      const nextWeeklyXp = (freshProfile.weekly_xp || 0) + safeReward;
+      // Note: Direct client writes to privileged fields (gems, weekly_xp, xp) are silently reverted
+      // by database security trigger 'trg_protect_profile_privileged_fields'. Only non-privileged
+      // tracking columns may be updated directly.
       const nextClaimed = [...freshClaimed, cleanRef];
 
       const updated = await updateProfile(activeEmail, {
-        gems: nextGems,
-        weekly_xp: nextWeeklyXp,
         claimed_rewards: nextClaimed
       });
 
@@ -636,10 +689,10 @@ export async function rpcClaimSpinReward(
         }
       }
 
-      confirmedBalance = updated.gems;
+      confirmedBalance = updated.gems ?? freshProfile.gems ?? currentGems;
       rpcSucceeded = true;
     } catch (err) {
-      console.error('[Rewards] Failed to persist spin reward to database:', err);
+      console.error('[Rewards] Failed to persist spin claim tracking to database:', err);
       // Database transaction failed -> do NOT grant reward or falsify balance
       return {
         granted: false,

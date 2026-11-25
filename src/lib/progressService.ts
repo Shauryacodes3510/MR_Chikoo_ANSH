@@ -14,6 +14,7 @@ import {
   setupAutoOnlineSync
 } from './dataCache';
 import { recordActiveDayInStorageAndCookies } from './streakCalendarStorage';
+import { getLessonDetails } from './lessonService';
 
 export type ProgressListener = (profile: SupabaseUserProfile) => void;
 
@@ -51,12 +52,12 @@ class ProgressService {
           await updateProfile(email, mutation.payload);
           successfulIds.push(mutation.id);
         } else if (mutation.type === 'lesson_completion') {
-          const { lessonId, cookiesReward } = mutation.payload;
-          await rpcCompleteChallenge(`lesson_${lessonId}`, cookiesReward || 100, 0, email);
+          const { lessonId, cookiesReward, xpReward } = mutation.payload;
+          await rpcCompleteChallenge(`lesson_${lessonId}`, cookiesReward || 100, xpReward || cookiesReward || 100, email);
           successfulIds.push(mutation.id);
         } else if (mutation.type === 'challenge_completion') {
-          const { challengeId, cookiesReward } = mutation.payload;
-          await rpcCompleteChallenge(challengeId, cookiesReward || 50, 0, email);
+          const { challengeId, cookiesReward, xpReward } = mutation.payload;
+          await rpcCompleteChallenge(challengeId, cookiesReward || 50, xpReward || cookiesReward || 50, email);
           successfulIds.push(mutation.id);
         } else {
           successfulIds.push(mutation.id);
@@ -192,7 +193,7 @@ class ProgressService {
         this.currentProfile = {
           ...profile,
           completed_lessons: mergedCompleted,
-          xp: 0 // Keep xp at 0/legacy placeholder
+          xp: profile.xp ?? 0
         };
         
         const duration = Date.now() - startTime;
@@ -273,7 +274,7 @@ class ProgressService {
     this.currentEmail = profile.email.toLowerCase().trim();
     this.currentProfile = {
       ...profile,
-      xp: 0
+      xp: profile.xp ?? 0
     };
     this.notifyListeners();
   }
@@ -303,7 +304,8 @@ class ProgressService {
     const updated = {
       ...this.currentProfile,
       ...updates,
-      xp: 0 // Keep xp at 0/legacy placeholder
+      xp: updates.xp !== undefined ? updates.xp : (this.currentProfile.xp ?? 0),
+      weekly_xp: updates.weekly_xp !== undefined ? updates.weekly_xp : (this.currentProfile.weekly_xp ?? 0)
     };
     
     if (updates.streak !== undefined && updates.best_streak === undefined) {
@@ -363,10 +365,11 @@ class ProgressService {
       newBestStreak = newStreak;
     }
 
-    // Prepare payload keeping xp = 0
+    // Prepare payload
     const finalUpdates: Partial<SupabaseUserProfile> = {
       ...updates,
-      xp: 0,
+      xp: updates.xp !== undefined ? updates.xp : (previousProfile.xp ?? 0),
+      weekly_xp: updates.weekly_xp !== undefined ? updates.weekly_xp : (previousProfile.weekly_xp ?? 0),
       streak: newStreak,
       best_streak: newBestStreak
     };
@@ -398,7 +401,8 @@ class ProgressService {
       this.currentProfile = {
         ...persisted,
         completed_lessons: confirmedLessons,
-        xp: 0
+        xp: updates.xp !== undefined ? updates.xp : (persisted.xp ?? previousProfile.xp ?? 0),
+        weekly_xp: updates.weekly_xp !== undefined ? updates.weekly_xp : (persisted.weekly_xp ?? previousProfile.weekly_xp ?? 0)
       };
       this.notifyListeners();
       return this.currentProfile;
@@ -410,9 +414,16 @@ class ProgressService {
   }
 
   /**
+   * Updates profile data and synchronizes state. Compatibility alias for updateProfileData.
+   */
+  async updateProfile(updates: Partial<SupabaseUserProfile>): Promise<SupabaseUserProfile> {
+    return this.updateProfileData(updates);
+  }
+
+  /**
    * Action: Completes a lesson using Supabase RPC complete_challenge.
    */
-  async recordLessonCompletion(lessonId: string, cookiesReward: number = 100): Promise<SupabaseUserProfile> {
+  async recordLessonCompletion(lessonId: string, cookiesReward: number = 100, xpReward?: number): Promise<SupabaseUserProfile> {
     const email = this.currentEmail || 'anonymous';
     const current = this.currentProfile || await this.initProfile(email);
     const currentLessons = current.completed_lessons || [];
@@ -420,6 +431,7 @@ class ProgressService {
     if (!isNew) {
       // Practice replay: award 15 practice cookies, maintain daily activity, and record streak
       const practiceCookies = 15;
+      const practiceXp = xpReward !== undefined ? xpReward : practiceCookies;
       recordActiveDayInStorageAndCookies(new Date(), email, practiceCookies);
       try {
         await rpcRecordStreakActivity(`practice_${lessonId}_${new Date().toISOString().slice(0, 10)}`, email, current.id);
@@ -428,21 +440,35 @@ class ProgressService {
         await recordUserDailyActivity({
           lessonsDelta: 1,
           cookiesDelta: practiceCookies,
-          xpDelta: practiceCookies,
+          xpDelta: practiceXp,
           userId: current.id
         });
       } catch (_) {}
-      const rpcRes = await rpcCompleteChallenge(`practice_${lessonId}_${new Date().toISOString().slice(0, 10)}`, practiceCookies, 0, email);
+      const rpcRes = await rpcCompleteChallenge(`practice_${lessonId}_${new Date().toISOString().slice(0, 10)}`, practiceCookies, practiceXp, email);
       return this.updateProfileData({
-        gems: rpcRes.newBalance
+        gems: rpcRes.new_balance ?? rpcRes.gems ?? rpcRes.newBalance,
+        ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
+        ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {})
       });
     }
     const newCompletedLessons = [...currentLessons, lessonId];
 
+    // Determine actual lesson XP reward
+    let lessonXpReward = xpReward;
+    if (lessonXpReward === undefined) {
+      try {
+        const lesson = await getLessonDetails(lessonId);
+        if (lesson) {
+          lessonXpReward = Number((lesson as any).xp_reward ?? lesson.xpReward);
+        }
+      } catch (_) {}
+    }
+    const finalXpReward = lessonXpReward ?? cookiesReward ?? 100;
+
     // Immediately persist completion and last active lesson to local storage cache
     saveStoredLessonCompletion(lessonId, {
       cookiesEarned: cookiesReward,
-      xpEarned: cookiesReward,
+      xpEarned: finalXpReward,
       completedAt: new Date().toISOString()
     }, email);
     saveLastActiveLessonId(lessonId, email);
@@ -483,51 +509,70 @@ class ProgressService {
       console.warn('[ProgressService] record_streak_activity RPC notice:', sErr);
     }
 
-    const rpcRes = await rpcCompleteChallenge(`lesson_${lessonId}`, cookiesReward, 0, email);
+    const rpcRes = await rpcCompleteChallenge(`lesson_${lessonId}`, cookiesReward, finalXpReward, email);
 
     // Record in main realtime DB user_daily_activity table
     await recordUserDailyActivity({
       lessonsDelta: 1,
       cookiesDelta: cookiesReward,
-      xpDelta: cookiesReward,
+      xpDelta: finalXpReward,
       userId: current.id
     });
 
     await this.updateProfileData({
       completed_lessons: newCompletedLessons,
-      gems: rpcRes.newBalance,
+      gems: rpcRes.new_balance ?? rpcRes.gems ?? rpcRes.newBalance,
+      ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
+      ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {}),
       streak: verifiedStreak,
       best_streak: verifiedBestStreak,
       last_streak_date: verifiedLastStreakDate
     });
 
-    return this.initProfile(email, true);
+    if (rpcRes.weekly_xp !== undefined || rpcRes.xp !== undefined) {
+      this.updateProfileLocally({
+        ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
+        ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {})
+      });
+    }
+
+    const reloaded = await this.initProfile(email, true);
+    if (rpcRes.weekly_xp !== undefined || rpcRes.xp !== undefined) {
+      return this.updateProfileLocally({
+        ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: Math.max(reloaded.weekly_xp || 0, rpcRes.weekly_xp) } : {}),
+        ...(rpcRes.xp !== undefined ? { xp: Math.max(reloaded.xp || 0, rpcRes.xp) } : {})
+      });
+    }
+    return reloaded;
   }
 
   /**
    * Action: Completes a unit or module using Supabase RPC complete_challenge.
    */
-  async recordUnitCompletion(moduleId: string, bonusCookies: number = 250): Promise<SupabaseUserProfile> {
+  async recordUnitCompletion(moduleId: string, bonusCookies: number = 250, xpReward?: number): Promise<SupabaseUserProfile> {
     const email = this.currentEmail || 'anonymous';
+    const effectiveXp = xpReward !== undefined ? xpReward : (bonusCookies || 250);
     // Persist unit completion and last active module in local storage cache
     saveStoredLessonCompletion(`unit_${moduleId}`, {
       cookiesEarned: bonusCookies,
-      xpEarned: bonusCookies,
+      xpEarned: effectiveXp,
       completedAt: new Date().toISOString()
     }, email);
     saveLastActiveModuleId(moduleId, email);
     recordActiveDayInStorageAndCookies(new Date(), email, bonusCookies);
 
-    const rpcRes = await rpcCompleteChallenge(`unit_mastery_${moduleId}`, bonusCookies, 0, email);
+    const rpcRes = await rpcCompleteChallenge(`unit_mastery_${moduleId}`, bonusCookies, effectiveXp, email);
     return this.updateProfileData({
-      gems: rpcRes.newBalance
+      gems: rpcRes.new_balance ?? rpcRes.gems ?? rpcRes.newBalance,
+      ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
+      ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {})
     });
   }
 
   /**
    * Action: Completes a daily challenge, quest, or puzzle pack with strict single-award idempotency.
    */
-  async recordChallengeCompletion(challengeId: string, cookiesReward: number = 50): Promise<SupabaseUserProfile> {
+  async recordChallengeCompletion(challengeId: string, cookiesReward: number = 50, xpReward?: number): Promise<SupabaseUserProfile> {
     const email = this.currentEmail || 'anonymous';
     const current = this.currentProfile || await this.initProfile(email);
     const currentChallenges = current.completed_daily_challenges || [];
@@ -536,11 +581,12 @@ class ProgressService {
       return current;
     }
     const newChallenges = [...currentChallenges, challengeId];
+    const effectiveXp = xpReward !== undefined ? xpReward : (cookiesReward || 50);
 
     // Persist challenge completion in local storage cache
     saveStoredLessonCompletion(challengeId, {
       cookiesEarned: cookiesReward,
-      xpEarned: cookiesReward,
+      xpEarned: effectiveXp,
       completedAt: new Date().toISOString()
     }, email);
 
@@ -580,18 +626,20 @@ class ProgressService {
       console.warn('[ProgressService] record_streak_activity RPC notice:', sErr);
     }
 
-    const rpcRes = await rpcCompleteChallenge(challengeId, cookiesReward, 0, email);
+    const rpcRes = await rpcCompleteChallenge(challengeId, cookiesReward, effectiveXp, email);
 
     await recordUserDailyActivity({
       challengesDelta: 1,
       cookiesDelta: cookiesReward,
-      xpDelta: cookiesReward,
+      xpDelta: effectiveXp,
       userId: current.id
     });
 
     return this.updateProfileData({
       completed_daily_challenges: newChallenges,
-      gems: rpcRes.newBalance,
+      gems: rpcRes.new_balance ?? rpcRes.gems ?? rpcRes.newBalance,
+      ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
+      ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {}),
       streak: verifiedStreak,
       best_streak: verifiedBestStreak,
       last_streak_date: verifiedLastStreakDate
@@ -601,19 +649,27 @@ class ProgressService {
   /**
    * Action: Completes a practice arena, rapid fire, or battle session using RPC.
    */
-  async recordPracticeSession(cookiesEarned: number = 50, sessionId?: string): Promise<SupabaseUserProfile> {
+  async recordPracticeSession(cookiesEarned: number = 50, sessionId?: string, xpEarned?: number): Promise<SupabaseUserProfile> {
     const email = this.currentEmail || 'anonymous';
     const current = this.currentProfile || await this.initProfile(email);
     const sessId = sessionId || `practice_${Date.now()}`;
-    const rpcRes = await rpcCompleteChallenge(sessId, cookiesEarned, 0, email);
+    const effectiveXp = xpEarned !== undefined ? xpEarned : (cookiesEarned || 50);
+    const rpcRes = await rpcCompleteChallenge(sessId, cookiesEarned, effectiveXp, email);
 
     await recordUserDailyActivity({
       battlesPlayedDelta: 1,
       battlesWonDelta: 1,
       cookiesDelta: cookiesEarned,
-      xpDelta: cookiesEarned,
+      xpDelta: effectiveXp,
       userId: current.id
     });
+
+    if (rpcRes.weekly_xp !== undefined || rpcRes.xp !== undefined) {
+      this.updateProfileLocally({
+        ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
+        ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {})
+      });
+    }
 
     return this.initProfile(email, true);
   }
@@ -624,12 +680,14 @@ class ProgressService {
   async claimDailyReward(cookiesAmount: number = 50, stepIndex?: number): Promise<SupabaseUserProfile> {
     const email = this.currentEmail || 'anonymous';
     const claimId = stepIndex !== undefined ? `step_reward_${stepIndex}` : `daily_step_${Date.now()}`;
-    const rpcRes = await rpcCompleteChallenge(claimId, cookiesAmount, 0, email);
+    const rpcRes = await rpcCompleteChallenge(claimId, cookiesAmount, cookiesAmount, email);
     const current = this.currentProfile || await this.initProfile(email);
     const newSteps = (current.total_steps_claimed || 0) + 1;
 
     return this.updateProfileData({
-      gems: rpcRes.newBalance,
+      gems: rpcRes.new_balance ?? rpcRes.gems ?? rpcRes.newBalance,
+      ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
+      ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {}),
       total_steps_claimed: newSteps
     });
   }
@@ -642,13 +700,15 @@ class ProgressService {
     const todayDate = new Date().toISOString().slice(0, 10);
     const claimKey = `daily_chest_${todayDate}`;
 
-    const rpcRes = await rpcCompleteChallenge(claimKey, cookiesAmount, 0, email);
+    const rpcRes = await rpcCompleteChallenge(claimKey, cookiesAmount, cookiesAmount, email);
     const current = this.currentProfile || await this.initProfile(email);
     const newChests = rpcRes.granted ? (current.total_chests_claimed || 0) + 1 : current.total_chests_claimed;
     const nowIso = new Date().toISOString();
 
     return this.updateProfileData({
-      gems: rpcRes.newBalance,
+      gems: rpcRes.new_balance ?? rpcRes.gems ?? rpcRes.newBalance,
+      ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
+      ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {}),
       total_chests_claimed: newChests,
       last_chest_claimed_at: rpcRes.granted ? nowIso : current.last_chest_claimed_at
     });

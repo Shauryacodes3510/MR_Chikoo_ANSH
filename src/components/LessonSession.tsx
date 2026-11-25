@@ -189,6 +189,27 @@ export const isReadingChallenge = (challenge?: any): boolean => {
   );
 };
 
+// Some lessons are saved with plain string lists, but these exercises render/grade {id, text, ...}
+// objects. Convert on load so options/steps are not blank and answers are graded correctly.
+const normalizeChallengeShape = (c: any) => {
+  if (!c) return c;
+  if (c.type === 'c16_eliminate_wrong' && Array.isArray(c.options) && c.options.some((o: any) => typeof o === 'string')) {
+    const answer = String(c.correctAnswer ?? '').trim().toLowerCase();
+    return {
+      ...c,
+      options: c.options.map((o: any, i: number) =>
+        typeof o === 'string'
+          ? { id: `opt_${i}`, text: o, isCorrect: o.trim().toLowerCase() === answer }
+          : o
+      )
+    };
+  }
+  if (c.type === 'c7_sequence_builder' && Array.isArray(c.steps) && c.steps.some((st: any) => typeof st === 'string')) {
+    return { ...c, steps: c.steps.map((st: any) => (typeof st === 'string' ? { id: st, text: st } : st)) };
+  }
+  return c;
+};
+
 export default function LessonSession({ 
   lesson, 
   performance, 
@@ -214,7 +235,7 @@ export default function LessonSession({
       const count = idMap.get(baseId) || 0;
       idMap.set(baseId, count + 1);
       return {
-        ...c,
+        ...normalizeChallengeShape(c),
         id: count === 0 ? baseId : `${baseId}_${count}_${i}`
       };
     });
