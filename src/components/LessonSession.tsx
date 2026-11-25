@@ -1664,6 +1664,11 @@ export default function LessonSession({
   if (currentChallenge && isStoryScreen(currentChallenge)) {
     const ch = currentChallenge as any;
     const rawContentData = ch.contentScreen || ch.visualLessonScreen || {};
+    // Empty strings in the nested object (e.g. mediaUrl: "") must not overwrite the
+    // fallbacks computed from top-level fields (e.g. imageUrl), so drop blanks before spreading.
+    const nonEmptyRawContentData = Object.fromEntries(
+      Object.entries(rawContentData).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+    );
     const storyContentData = {
       id: currentChallenge.id,
       sceneType: rawContentData.sceneType || 
@@ -1693,6 +1698,7 @@ export default function LessonSession({
       contentBody: rawContentData.contentBody || 
                    ch.contentBody || 
                    (typeof ch.explanation === 'string' ? ch.explanation : ch.explanation?.text) || 
+                   ch.celebrationText || 
                    ch.content,
       highlightBox: rawContentData.highlightBox || 
                     ch.highlightBox,
@@ -1708,7 +1714,7 @@ export default function LessonSession({
                 ch.messages,
       panels: rawContentData.panels || 
               ch.panels,
-      ...rawContentData
+      ...nonEmptyRawContentData
     };
 
     return (

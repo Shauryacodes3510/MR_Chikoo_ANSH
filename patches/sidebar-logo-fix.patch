@@ -1,0 +1,45 @@
+diff --git a/src/components/desktop/DesktopLeftSidebar.tsx b/src/components/desktop/DesktopLeftSidebar.tsx
+index 701b0bd..04b97a0 100644
+--- a/src/components/desktop/DesktopLeftSidebar.tsx
++++ b/src/components/desktop/DesktopLeftSidebar.tsx
+@@ -19,6 +19,7 @@ import ranksIcon from '@/leaderboard_icon.webp';
+ import rewardsIcon from '@/chest1.webp';
+ import questIcon from '@/Quest.webp';
+ import avatarIcon from '@/avatar.webp';
++import chikooSneak from '@/Aibo_sneak.webp';
+ import SmoothImg from '../ui/SmoothImg';
+ 
+ interface DesktopLeftSidebarProps {
+@@ -145,9 +146,13 @@ export const DesktopLeftSidebar = memo(function DesktopLeftSidebar({
+               isRewardsView ? 'bg-slate-900' : 'bg-white dark:bg-slate-900'
+             }`}>
+               <SmoothImg 
+-                src="/Aibo_sneak.webp" 
++                src={chikooSneak} 
+                 alt="Chikoo" 
+                 className="w-9 h-9 object-contain group-hover:rotate-6 transition-transform duration-200"
++                onError={(e) => {
++                  const img = e.currentTarget as HTMLImageElement;
++                  if (!img.src.endsWith('/avatar.webp')) img.src = '/avatar.webp';
++                }}
+               />
+             </div>
+             {/* Online Pulse Dot */}
+diff --git a/sw.js b/sw.js
+index a39fca9..2f08872 100644
+--- a/sw.js
++++ b/sw.js
+@@ -1,4 +1,4 @@
+-const CACHE_NAME = 'chikoo-cache-v3';
++const CACHE_NAME = 'chikoo-cache-v4';
+ 
+ // Assets to cache immediately on service worker installation
+ const PRECACHE_ASSETS = [
+@@ -13,7 +13,6 @@ const PRECACHE_ASSETS = [
+   '/Ranks.webp',
+   '/Rewards.webp',
+   '/avatar.webp',
+-  '/avatar.png',
+   '/world.webp',
+   '/streak.webp',
+   '/cookies.webp',

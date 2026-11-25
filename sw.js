@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chikoo-cache-v3';
+const CACHE_NAME = 'chikoo-cache-v4';
 
 // Assets to cache immediately on service worker installation
 const PRECACHE_ASSETS = [
@@ -13,7 +13,6 @@ const PRECACHE_ASSETS = [
   '/Ranks.webp',
   '/Rewards.webp',
   '/avatar.webp',
-  '/avatar.png',
   '/world.webp',
   '/streak.webp',
   '/cookies.webp',

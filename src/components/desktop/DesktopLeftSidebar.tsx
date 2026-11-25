@@ -19,6 +19,7 @@ import ranksIcon from '@/leaderboard_icon.webp';
 import rewardsIcon from '@/chest1.webp';
 import questIcon from '@/Quest.webp';
 import avatarIcon from '@/avatar.webp';
+import chikooSneak from '@/Aibo_sneak.webp';
 import SmoothImg from '../ui/SmoothImg';
 
 interface DesktopLeftSidebarProps {
@@ -145,9 +146,13 @@ export const DesktopLeftSidebar = memo(function DesktopLeftSidebar({
               isRewardsView ? 'bg-slate-900' : 'bg-white dark:bg-slate-900'
             }`}>
               <SmoothImg 
-                src="/Aibo_sneak.webp" 
+                src={chikooSneak} 
                 alt="Chikoo" 
                 className="w-9 h-9 object-contain group-hover:rotate-6 transition-transform duration-200"
+                onError={(e) => {
+                  const img = e.currentTarget as HTMLImageElement;
+                  if (!img.src.endsWith('/avatar.webp')) img.src = '/avatar.webp';
+                }}
               />
             </div>
             {/* Online Pulse Dot */}
