@@ -44,7 +44,7 @@ const CookieWheel = lazy(() => import('./components/CookieWheel'));
 const DesktopLandingPage = lazy(() => import('./components/desktop/DesktopLandingPage'));
 import { DesktopLeftSidebar } from './components/desktop/DesktopLeftSidebar';
 import { DesktopRightPanel } from './components/desktop/DesktopRightPanel';
-import { generateSpinReference } from './lib/supabaseRewards';
+import { generateSpinReference, rpcSyncEnergy, rpcAdjustEnergy } from './lib/supabaseRewards';
 import SeoPageRouter from './components/seo/SeoPageRouter';
 import { schoolService, School } from './lib/schoolService';
 import { useLearningPathsAndPacksQuery } from './hooks/useLearningPathsAndPacksQuery';
@@ -415,6 +415,9 @@ function AppContent() {
   const [trophies, setTrophies] = useState(0);
   const [energy, setEnergy] = useState(MAX_ENERGY);
   const [lastEnergyRefill, setLastEnergyRefill] = useState<number>(Date.now());
+  const energyRef = useRef<number>(MAX_ENERGY);
+  energyRef.current = energy;
+  const energySyncingRef = useRef(false);
   const [accuracy, setAccuracy] = useState(1.0); // Default to 100%
   const [completedLessons, setCompletedLessons] = useState<string[]>(() => {
     return getStoredCompletedLessonIds(null);
@@ -768,25 +771,16 @@ function AppContent() {
       setStreak(profile.streak);
       setAccuracy(profile.accuracy);
 
-      // Offline Energy Calculation: 1 heart/energy per 1 hour offline
-      const currentEnergy = profile.energy ?? MAX_ENERGY;
-      const lastRefillMs = (profile as any).last_energy_refill_at 
-        ? new Date((profile as any).last_energy_refill_at).getTime() 
-        : Date.now();
-      const offlineHoursPassed = Math.floor((Date.now() - lastRefillMs) / REGEN_TIME_PER_UNIT);
-
-      if (currentEnergy < MAX_ENERGY && offlineHoursPassed > 0) {
-        const restoredEnergy = Math.min(MAX_ENERGY, currentEnergy + offlineHoursPassed);
-        setEnergy(restoredEnergy);
-        setLastEnergyRefill(Date.now());
-        saveProfileUpdates({ 
-          energy: restoredEnergy, 
-          last_energy_refill_at: new Date().toISOString() 
-        } as any);
-      } else {
-        setEnergy(currentEnergy);
-        setLastEnergyRefill(lastRefillMs);
-      }
+      // Energy: server calculates hourly regen (sync_energy). Show profile value first, then confirm from server.
+      setEnergy(profile.energy ?? MAX_ENERGY);
+      rpcSyncEnergy().then(res => {
+        if (res.success) {
+          setEnergy(res.energy);
+          setLastEnergyRefill(res.lastEnergyRefillAt ?? Date.now());
+        } else {
+          setLastEnergyRefill(Date.now());
+        }
+      });
       const localStored = getStoredCompletedLessonIds(sessionUser);
       const combinedCompleted = [...new Set([
         ...localStored,
@@ -1461,26 +1455,22 @@ function AppContent() {
       return;
     }
     const checkEnergy = () => {
-      const now = Date.now();
-      const timePassed = now - lastEnergyRefill;
-      
-      if (timePassed >= REGEN_TIME_PER_UNIT) {
-        const unitsToAdd = Math.floor(timePassed / REGEN_TIME_PER_UNIT);
-        setEnergy(current => {
-          const next = Math.min(MAX_ENERGY, current + unitsToAdd);
-          if (next > current) {
+      const timePassed = Date.now() - lastEnergyRefill;
+      if (timePassed < REGEN_TIME_PER_UNIT || energySyncingRef.current) return;
+      energySyncingRef.current = true;
+      rpcSyncEnergy().then(res => {
+        if (res.success) {
+          if (res.energy > energyRef.current) {
             setIsRegeneratingEnergy(true);
             setTimeout(() => setIsRegeneratingEnergy(false), 2000);
-            // Save to database so refresh doesn't lose it
-            saveProfileUpdates({ 
-              energy: next, 
-              last_energy_refill_at: new Date().toISOString() 
-            } as any);
           }
-          return next;
-        });
-        setLastEnergyRefill(prev => prev + (unitsToAdd * REGEN_TIME_PER_UNIT));
-      }
+          setEnergy(res.energy);
+          setLastEnergyRefill(res.lastEnergyRefillAt ?? Date.now());
+        } else {
+          // Server unreachable: retry after a full interval instead of every 2.5s
+          setLastEnergyRefill(Date.now());
+        }
+      }).finally(() => { energySyncingRef.current = false; });
     };
 
     const timer = setInterval(checkEnergy, 2500);
@@ -1885,19 +1875,17 @@ function AppContent() {
 
   const handleRestoreEnergy = useCallback((amount: number, streakCount: number) => {
     // 5 in a row gives 1 full heart (5 energy units out of 25)
-    const bonus = Math.max(5, amount);
-    startTransition(() => {
-      setEnergy(prev => {
-        const nextEnergy = Math.min(MAX_ENERGY, prev + bonus);
-        if (sessionUser) {
-          saveProfileUpdates({ energy: nextEnergy });
-          try {
-            localStorage.setItem(`CHIKOO_ENERGY_${sessionUser.toLowerCase().trim()}`, String(nextEnergy));
-          } catch (_) {}
-        }
-        return nextEnergy;
+    const bonus = Math.min(5, Math.max(5, amount));
+    const nextEnergy = Math.min(MAX_ENERGY, energyRef.current + bonus);
+    energyRef.current = nextEnergy;
+    setEnergy(nextEnergy);
+    if (sessionUser) {
+      rpcAdjustEnergy(bonus, 'streak_bonus').then(res => {
+        if (res.success) { setEnergy(res.energy); if (res.lastEnergyRefillAt) setLastEnergyRefill(res.lastEnergyRefillAt); }
+        else rpcSyncEnergy().then(r => { if (r.success) setEnergy(r.energy); });
       });
-      
+    }
+    startTransition(() => {
       // Streak Bonus: +5 Cookies & +1 Heart for every 5 correct answers in a row
       if (streakCount % 5 === 0) {
         setXp(prev => prev + 5);
@@ -1941,21 +1929,18 @@ function AppContent() {
 
     if (!isCorrect) {
       // 1 mistake = 1 heart lost (5 units out of 25 max energy)
-      startTransition(() => {
-        setEnergy(prev => {
-          const nextEnergy = Math.max(0, prev - 5);
-          if (sessionUser) {
-            saveProfileUpdates({ energy: nextEnergy });
-            try {
-              localStorage.setItem(`CHIKOO_ENERGY_${sessionUser.toLowerCase().trim()}`, String(nextEnergy));
-            } catch (_) {}
-          }
-          if (nextEnergy <= 0) {
-            setShowEnergyRefillModal(true);
-          }
-          return nextEnergy;
+      const nextEnergy = Math.max(0, energyRef.current - 5);
+      energyRef.current = nextEnergy;
+      setEnergy(nextEnergy);
+      if (nextEnergy <= 0) {
+        setShowEnergyRefillModal(true);
+      }
+      if (sessionUser) {
+        rpcAdjustEnergy(-5, 'wrong_answer').then(res => {
+          if (res.success) { setEnergy(res.energy); if (res.lastEnergyRefillAt) setLastEnergyRefill(res.lastEnergyRefillAt); }
+          else rpcSyncEnergy().then(r => { if (r.success) setEnergy(r.energy); });
         });
-      });
+      }
     }
   }, [sessionUser, activeLesson?.title, saveProfileUpdates]);
 
@@ -1970,7 +1955,6 @@ function AppContent() {
       if (updated && typeof updated.gems === 'number') {
         setGems(updated.gems);
       }
-      await progressService.updateProfileData({ energy: MAX_ENERGY });
       setEnergy(MAX_ENERGY);
       if (sessionUser) {
         try {

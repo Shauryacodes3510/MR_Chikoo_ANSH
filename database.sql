@@ -391,6 +391,9 @@ BEGIN
         IF NEW.best_streak IS DISTINCT FROM OLD.best_streak THEN
             NEW.best_streak := OLD.best_streak;
         END IF;
+        IF NEW.last_streak_date IS DISTINCT FROM OLD.last_streak_date THEN
+            NEW.last_streak_date := OLD.last_streak_date;
+        END IF;
         IF NEW.energy IS DISTINCT FROM OLD.energy THEN
             NEW.energy := OLD.energy;
         END IF;

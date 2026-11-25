@@ -19,6 +19,7 @@ import ranksIcon from '@/leaderboard_icon.webp';
 import rewardsIcon from '@/chest1.webp';
 import questIcon from '@/Quest.webp';
 import avatarIcon from '@/avatar.webp';
+import SmoothImg from '../ui/SmoothImg';
 
 interface DesktopLeftSidebarProps {
   view: string;
@@ -143,7 +144,7 @@ export const DesktopLeftSidebar = memo(function DesktopLeftSidebar({
             <div className={`w-full h-full rounded-[14px] flex items-center justify-center overflow-hidden ${
               isRewardsView ? 'bg-slate-900' : 'bg-white dark:bg-slate-900'
             }`}>
-              <img 
+              <SmoothImg 
                 src="/Aibo_sneak.webp" 
                 alt="Chikoo" 
                 className="w-9 h-9 object-contain group-hover:rotate-6 transition-transform duration-200"
@@ -210,7 +211,7 @@ export const DesktopLeftSidebar = memo(function DesktopLeftSidebar({
 
               {/* Icon */}
               <div className="relative flex-shrink-0 w-7 h-7 flex items-center justify-center">
-                <img 
+                <SmoothImg 
                   src={item.icon} 
                   alt="" 
                   className={`w-7 h-7 object-contain transition-transform duration-150 ${
@@ -322,7 +323,7 @@ export const DesktopLeftSidebar = memo(function DesktopLeftSidebar({
             <div className={`relative w-9 h-9 rounded-xl border overflow-hidden flex-shrink-0 flex items-center justify-center ${
               isRewardsView ? 'bg-slate-800 border-white/10' : 'bg-sky-100 dark:bg-sky-950/60 border-sky-200 dark:border-sky-800'
             }`}>
-              <img 
+              <SmoothImg 
                 src="/avatar.webp" 
                 alt="Avatar" 
                 className="w-8 h-8 object-contain"

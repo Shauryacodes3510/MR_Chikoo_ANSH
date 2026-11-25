@@ -987,3 +987,58 @@ export async function rpcRecordStreakActivity(
     message: 'RPC execution fallback'
   };
 }
+
+
+/**
+ * Energy RPCs (server is the source of truth for energy).
+ * sync_energy(): applies hourly regen. adjust_energy(delta): -5 on a mistake, +5 on a streak bonus.
+ */
+export interface EnergyRpcResult {
+  success: boolean;
+  energy: number;
+  lastEnergyRefillAt: number | null;
+  reason?: string;
+}
+
+function parseEnergyRpc(data: any): EnergyRpcResult {
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || row.success !== true || typeof row.energy !== 'number') {
+    return { success: false, energy: 0, lastEnergyRefillAt: null, reason: row?.reason || 'rpc_failed' };
+  }
+  const ts = row.last_energy_refill_at ? new Date(row.last_energy_refill_at).getTime() : NaN;
+  return { success: true, energy: row.energy, lastEnergyRefillAt: Number.isNaN(ts) ? null : ts };
+}
+
+export async function rpcSyncEnergy(): Promise<EnergyRpcResult> {
+  if (!isSupabaseConfigured || !supabase) {
+    return { success: false, energy: 0, lastEnergyRefillAt: null, reason: 'not_configured' };
+  }
+  try {
+    const { data, error } = await supabase.rpc('sync_energy');
+    if (error) {
+      console.warn('[Rewards] sync_energy notice:', error.message);
+      return { success: false, energy: 0, lastEnergyRefillAt: null, reason: error.message };
+    }
+    return parseEnergyRpc(data);
+  } catch (e) {
+    console.warn('[Rewards] sync_energy exception:', e);
+    return { success: false, energy: 0, lastEnergyRefillAt: null, reason: 'exception' };
+  }
+}
+
+export async function rpcAdjustEnergy(delta: number, reason: string = 'client'): Promise<EnergyRpcResult> {
+  if (!isSupabaseConfigured || !supabase) {
+    return { success: false, energy: 0, lastEnergyRefillAt: null, reason: 'not_configured' };
+  }
+  try {
+    const { data, error } = await supabase.rpc('adjust_energy', { p_delta: delta, p_reason: reason });
+    if (error) {
+      console.warn('[Rewards] adjust_energy notice:', error.message);
+      return { success: false, energy: 0, lastEnergyRefillAt: null, reason: error.message };
+    }
+    return parseEnergyRpc(data);
+  } catch (e) {
+    console.warn('[Rewards] adjust_energy exception:', e);
+    return { success: false, energy: 0, lastEnergyRefillAt: null, reason: 'exception' };
+  }
+}

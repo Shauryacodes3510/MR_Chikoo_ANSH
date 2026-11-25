@@ -45,6 +45,7 @@ export const LessonSkeletonLoader: React.FC<{ text?: string; fullScreen?: boolea
             <img
               src="https://myimgs.org/storage/images/43214/ezgifcom-gif-to-svg-converter1.gif"
               alt="Loading"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/mascot/still.webp'; }}
               className="w-12 h-12 object-contain opacity-70"
             />
           </div>
@@ -111,6 +112,7 @@ export const ChikooReachingLoader: React.FC<ChikooReachingLoaderProps> = ({
         <img
           src="https://myimgs.org/storage/images/43214/ezgifcom-gif-to-svg-converter1.gif"
           alt="Chikoo is reaching..."
+          onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/mascot/still.webp'; }}
           className="w-36 h-36 sm:w-44 sm:h-44 md:w-52 md:h-52 object-contain select-none pointer-events-none drop-shadow-sm"
           referrerPolicy="no-referrer"
         />

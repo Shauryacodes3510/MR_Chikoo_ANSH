@@ -49,6 +49,7 @@ BEGIN
             IF NEW.gems        IS DISTINCT FROM OLD.gems        THEN NEW.gems        := OLD.gems;        END IF;
             IF NEW.streak      IS DISTINCT FROM OLD.streak      THEN NEW.streak      := OLD.streak;      END IF;
             IF NEW.best_streak IS DISTINCT FROM OLD.best_streak THEN NEW.best_streak := OLD.best_streak; END IF;
+            IF NEW.last_streak_date IS DISTINCT FROM OLD.last_streak_date THEN NEW.last_streak_date := OLD.last_streak_date; END IF;
             IF NEW.trophies    IS DISTINCT FROM OLD.trophies    THEN NEW.trophies    := OLD.trophies;    END IF;
 
             -- Energy/Hearts: Client can update within [0, 25].

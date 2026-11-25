@@ -637,8 +637,9 @@ export const DesktopLandingPage = memo(function DesktopLandingPage({
               <div className="relative w-72 sm:w-80 h-72 sm:h-80 rounded-3xl bg-white border border-sky-100 shadow-xl flex items-center justify-center p-6">
                 <div className="absolute inset-0 bg-sky-100/40 rounded-3xl blur-xl -z-10" />
                 <img 
-                  src="/exaplaination_screens/wink.webp" 
+                  src="/mascot/wink.webp" 
                   alt="Chikoo Companion" 
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/heading_aibo.webp'; }}
                   className="w-56 h-auto object-contain select-none"
                 />
                 <div className="absolute -bottom-4 bg-slate-900 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow">
