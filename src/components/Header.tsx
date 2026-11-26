@@ -6,6 +6,7 @@ import { World, UserWorldProgress } from '../lib/supabase';
 
 interface HeaderProps {
   xp: number;
+  weeklyXp?: number;
   gems: number;
   rank?: number;
   charging: number; // This is now energy unit count (0-25)
@@ -31,6 +32,8 @@ interface HeaderProps {
 }
 
 function Header({ 
+  xp,
+  weeklyXp,
   gems,
   charging: energyUnits, 
   onRefillRequest,
@@ -53,6 +56,8 @@ function Header({
           streak={streak}
           gems={gems}
           energy={energyUnits}
+          weeklyXp={weeklyXp ?? xp}
+          xp={xp}
           onRefillRequest={onRefillRequest}
           onProfileClick={onProfileClick}
           worlds={worlds}

@@ -492,6 +492,15 @@ export async function rpcCompleteChallenge(
   progressService.updateProfileLocally(localUpdates);
   console.log('[Rewards] UI balance updated:', confirmedBalance);
 
+  // Persist claimed_rewards to database profile so it survives refresh even when reward_claims table cannot be queried
+  if (activeEmail) {
+    updateProfile(activeEmail, {
+      claimed_rewards: localUpdates.claimed_rewards
+    }).catch(err => {
+      console.warn('[Rewards] Non-blocking notice: could not update claimed_rewards on profile:', err);
+    });
+  }
+
   return {
     success: true,
     granted: true,

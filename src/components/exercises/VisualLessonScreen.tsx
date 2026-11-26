@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Lightbulb, Star, Quote, Heart, Flame, Gift, Volume2, VolumeX, X, ShieldAlert, Bookmark, RotateCcw, Loader2 } from 'lucide-react';
+import { Sparkles, Lightbulb, Star, Quote, Heart, Flame, Gift, Volume2, VolumeX, X, ShieldAlert, Bookmark, RotateCcw, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { soundManager } from '../../lib/sounds';
 import EnergyIndicator from '../ui/EnergyIndicator';
 
@@ -116,6 +116,10 @@ interface VisualLessonScreenProps {
   currentIndex?: number;
   totalChallenges?: number;
   onClose?: () => void;
+  onPrevious?: () => void;
+  canGoPrevious?: boolean;
+  onNext?: () => void;
+  canGoNext?: boolean;
   energy?: number;
   nextEnergyIn?: number;
   audioIsPlaying?: boolean;
@@ -137,6 +141,10 @@ export default function VisualLessonScreen({
   currentIndex,
   totalChallenges,
   onClose,
+  onPrevious,
+  canGoPrevious = false,
+  onNext,
+  canGoNext = false,
   energy,
   nextEnergyIn,
   audioIsPlaying = false,
@@ -245,16 +253,31 @@ export default function VisualLessonScreen({
         </div>
 
         {/* Floating Transparent Top HUD */}
-        <div className="absolute top-0 inset-x-0 p-4 sm:p-5 flex items-center justify-between gap-4 z-50 bg-gradient-to-b from-black/50 to-transparent">
-          {/* Back/Close Circle Button */}
-          <button 
-            onClick={() => {
-              if (onClose) onClose();
-            }} 
-            className="w-10 h-10 rounded-full bg-black/35 hover:bg-black/50 text-white flex items-center justify-center transition-all border border-white/10 hover:scale-105 active:scale-95 cursor-pointer backdrop-blur-md"
-          >
-            <X className="w-5 h-5" />
-          </button>
+        <div className="absolute top-0 inset-x-0 p-4 sm:p-5 flex items-center justify-between gap-3 sm:gap-4 z-50 bg-gradient-to-b from-black/50 to-transparent">
+          {/* Back/Close & Previous Buttons */}
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => {
+                if (onClose) onClose();
+              }} 
+              className="w-10 h-10 rounded-full bg-black/35 hover:bg-black/50 text-white flex items-center justify-center transition-all border border-white/10 hover:scale-105 active:scale-95 cursor-pointer backdrop-blur-md"
+              title="Close Lesson"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {onPrevious && (
+              <button
+                type="button"
+                disabled={!canGoPrevious}
+                onClick={onPrevious}
+                className="w-10 h-10 rounded-full bg-black/35 hover:bg-black/50 text-white flex items-center justify-center transition-all border border-white/10 hover:scale-105 active:scale-95 cursor-pointer backdrop-blur-md disabled:opacity-30 disabled:pointer-events-none"
+                title="Previous Screen"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+            )}
+          </div>
 
           {/* Floating Lesson Progress Bar */}
           <div className="flex-1 h-3.5 bg-white/15 backdrop-blur-md rounded-full overflow-hidden border border-white/10 shadow-inner max-w-xs sm:max-w-md">
@@ -265,6 +288,17 @@ export default function VisualLessonScreen({
               className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full shadow-[0_0_8px_rgba(139,92,246,0.5)]"
             />
           </div>
+
+          {onNext && canGoNext && (
+            <button
+              type="button"
+              onClick={onNext}
+              className="w-10 h-10 rounded-full bg-black/35 hover:bg-black/50 text-white flex items-center justify-center transition-all border border-white/10 hover:scale-105 active:scale-95 cursor-pointer backdrop-blur-md"
+              title="Next Screen"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          )}
 
           {/* Indicators & Music Toggle */}
           <div className="flex items-center gap-3">

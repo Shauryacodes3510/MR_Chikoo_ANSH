@@ -33,7 +33,8 @@
     </noscript>
     <script>
       try {
-        if (localStorage.getItem('CHIKOO_THEME_MODE') === 'dark') {
+        const savedTheme = localStorage.getItem('CHIKOO_THEME_MODE');
+        if (savedTheme === 'dark' || (savedTheme !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
           document.documentElement.classList.add('dark');
         }
       } catch (e) {}

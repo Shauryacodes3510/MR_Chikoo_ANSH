@@ -88,6 +88,8 @@ import {
 } from './lib/supabase';
 import { progressService } from './lib/progressService';
 import { DailyStreakAnimation } from './components/DailyStreakAnimation';
+import { AppExitConfirmationModal } from './components/AppExitConfirmationModal';
+import { useAppBackNavigation } from './features/student/hooks/useAppBackNavigation';
 import { rewardService } from './lib/rewardService';
 import { getISTDateString, isSameISTDay } from './lib/questConfig';
 import { getRewardsAsync } from './lib/rewardsStore';
@@ -506,6 +508,33 @@ function AppContent() {
   const [isQuestDetailsOpen, setIsQuestDetailsOpen] = useState(false);
   const isCompletingLessonRef = useRef<string | null>(null);
 
+  // Android Hardware Back Button & Browser Back/Forward Navigation Handler
+  const { showExitModal, handleStay, handleConfirmExit } = useAppBackNavigation({
+    view,
+    setView,
+    activeLesson,
+    onCloseLesson: () => {
+      setActiveLesson(null);
+      setLoadingLesson(null);
+    },
+    activeModals: {
+      isAdminActive,
+      setIsAdminActive,
+      showEnergyRefillModal,
+      setShowEnergyRefillModal,
+      showCookieWheelModal,
+      setShowCookieWheelModal,
+      adventureLauncher,
+      setAdventureLauncher,
+      showDailyStreakAnimation,
+      setShowDailyStreakAnimation,
+      isQuestDetailsOpen,
+      setIsQuestDetailsOpen,
+      showSignOutConfirm,
+      setShowSignOutConfirm
+    }
+  });
+
   useEffect(() => {
     const handleCurriculumError = () => {
       import('./lib/content').then(({ curriculumLoadError }) => {
@@ -742,29 +771,71 @@ function AppContent() {
   const [spaceTitle, setSpaceTitle] = useState<string>('Solar Cadet');
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [isEditingMotto, setIsEditingMotto] = useState(false);
-  // Dark Mode State & Synchronization
+  // Dark Mode State & Synchronization (Light | Dark | System)
+  type ThemePreference = 'light' | 'dark' | 'system';
+
+  const [themePreference, setThemePreference] = useState<ThemePreference>(() => {
+    try {
+      const saved = localStorage.getItem('CHIKOO_THEME_MODE');
+      if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+      return 'system';
+    } catch {
+      return 'system';
+    }
+  });
+
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('CHIKOO_THEME_MODE') === 'dark';
+      const saved = localStorage.getItem('CHIKOO_THEME_MODE');
+      if (saved === 'dark') return true;
+      if (saved === 'light') return false;
+      return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches || false;
     } catch {
       return false;
     }
   });
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-      document.body.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      document.body.classList.remove('dark');
+    const updateTheme = () => {
+      let isDark = false;
+      if (themePreference === 'dark') {
+        isDark = true;
+      } else if (themePreference === 'light') {
+        isDark = false;
+      } else {
+        isDark = typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches || false;
+      }
+
+      setIsDarkMode(isDark);
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.body.classList.remove('dark');
+      }
+    };
+
+    updateTheme();
+
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handleSystemChange = () => {
+        if (themePreference === 'system') {
+          updateTheme();
+        }
+      };
+      mediaQuery.addEventListener('change', handleSystemChange);
+      return () => mediaQuery.removeEventListener('change', handleSystemChange);
     }
-  }, [isDarkMode]);
+  }, [themePreference]);
 
   useEffect(() => {
     const handleThemeChange = (e: any) => {
-      const mode = e.detail?.mode || (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
-      setIsDarkMode(mode === 'dark');
+      const pref = e.detail?.preference || (e.detail?.mode === 'dark' ? 'dark' : 'light');
+      if (pref === 'light' || pref === 'dark' || pref === 'system') {
+        setThemePreference(pref);
+      }
     };
     window.addEventListener('chikoo:theme_change', handleThemeChange);
     return () => window.removeEventListener('chikoo:theme_change', handleThemeChange);
@@ -2148,7 +2219,7 @@ function AppContent() {
   const handleLessonComplete = useCallback((earnedXp: number, sessionAccuracy: number, finalStreak: number) => {
     if (!activeLesson) return;
     const currentLesson = activeLesson;
-    const lessonId = currentLesson.id;
+    const lessonId = String(currentLesson.id || '');
 
     // Idempotency: Prevent concurrent/rapid in-flight executions for the same lesson
     if (isCompletingLessonRef.current === lessonId) return;
@@ -2159,11 +2230,12 @@ function AppContent() {
       const isChallengeNode = currentLesson.isChallenge;
       const isGuardianNode = currentLesson.isBonus;
       const requiresPassRule = isChallengeNode || isGuardianNode;
-      const didPass = sessionAccuracy >= 0.8;
+      const didPass = sessionAccuracy >= 0.6; // 60% passing rule for challenges and guardians
 
       if (requiresPassRule && !didPass) {
         // Failed to meet the 80% passing rule, close session cleanly and do not mark completed
         setActiveLesson(null);
+        setLoadingLesson(null);
         return;
       }
 
@@ -2174,19 +2246,27 @@ function AppContent() {
         : null;
 
       // Find any matched challenge pack from CMS
-      const chalPacks = challengePacks.length > 0 ? challengePacks : getChallengePacks();
-      const matchedPack = chalPacks.find(p => p && (p.id === lessonId || ensureUuid(p.id) === ensureUuid(lessonId) || lessonId.includes(p.id) || p.id.includes(lessonId)));
+      const chalPacks = (challengePacks && challengePacks.length > 0) ? challengePacks : getChallengePacks();
+      const matchedPack = (chalPacks || []).find(p => {
+        if (!p || !p.id) return false;
+        const pIdStr = String(p.id);
+        return pIdStr === lessonId || 
+               ensureUuid(pIdStr) === ensureUuid(lessonId) || 
+               lessonId.includes(pIdStr) || 
+               pIdStr.includes(lessonId);
+      });
 
-      const isReplay = completedLessons.includes(lessonId) ||
-        Boolean(rawPackId && completedLessons.includes(rawPackId)) ||
-        Boolean(matchedPack && (completedLessons.includes(matchedPack.id) || completedLessons.includes(`practice_${matchedPack.id}`)));
+      const cleanCompleted = (completedLessons || []).map(id => String(id || '')).filter(Boolean);
+      const isReplay = cleanCompleted.includes(lessonId) ||
+        Boolean(rawPackId && cleanCompleted.includes(rawPackId)) ||
+        Boolean(matchedPack && (cleanCompleted.includes(String(matchedPack.id)) || cleanCompleted.includes(`practice_${matchedPack.id}`)));
 
       const newCompleted = [
         ...new Set([
-          ...completedLessons, 
+          ...cleanCompleted, 
           lessonId, 
           ...(rawPackId ? [rawPackId] : []),
-          ...(matchedPack ? [matchedPack.id, `practice_${matchedPack.id}`] : [])
+          ...(matchedPack?.id ? [String(matchedPack.id), `practice_${matchedPack.id}`] : [])
         ])
       ];
       setCompletedLessons(newCompleted); // Update local state immediately for fast response
@@ -2199,9 +2279,10 @@ function AppContent() {
       }
 
       // Intelligently preload the next uncompleted lesson so tapping it opens immediately
-      const nextUpcomingLesson = adventureModules
-        .flatMap(m => m.lessons || [])
-        .find(l => l && !newCompleted.includes(l.id));
+      const safeModules = adventureModules || [];
+      const nextUpcomingLesson = safeModules
+        .flatMap(m => m?.lessons || [])
+        .find(l => l && l.id && !newCompleted.includes(String(l.id)));
       if (nextUpcomingLesson) {
         preloadNextLesson(nextUpcomingLesson);
       }
@@ -2209,15 +2290,15 @@ function AppContent() {
       let bonusXp = 0;
       let masteryClaimId: string | null = null;
 
-      const currentModule = adventureModules.find(m => m.lessons.some(l => l.id === lessonId));
+      const currentModule = safeModules.find(m => (m?.lessons || []).some((l: any) => l && String(l.id) === lessonId));
       if (currentModule) {
-        const allLessonsInCurriculum = adventureModules.flatMap(m => m.lessons.map(l => l.id));
-        const wasCurriculumFinishedBefore = allLessonsInCurriculum.length > 0 && allLessonsInCurriculum.every(id => completedLessons.includes(id));
+        const allLessonsInCurriculum = safeModules.flatMap(m => (m?.lessons || []).map((l: any) => String(l?.id || '')).filter(Boolean));
+        const wasCurriculumFinishedBefore = allLessonsInCurriculum.length > 0 && allLessonsInCurriculum.every(id => cleanCompleted.includes(id));
         const isCurriculumFinishedNow = allLessonsInCurriculum.length > 0 && allLessonsInCurriculum.every(id => newCompleted.includes(id));
 
-        const allModuleLessons = currentModule.lessons.map(l => l.id);
-        const wasCompletedBefore = allModuleLessons.every(id => completedLessons.includes(id));
-        const isCompletedNow = allModuleLessons.every(id => newCompleted.includes(id));
+        const allModuleLessons = (currentModule.lessons || []).map((l: any) => String(l?.id || '')).filter(Boolean);
+        const wasCompletedBefore = allModuleLessons.length > 0 && allModuleLessons.every(id => cleanCompleted.includes(id));
+        const isCompletedNow = allModuleLessons.length > 0 && allModuleLessons.every(id => newCompleted.includes(id));
 
         if (isCurriculumFinishedNow && !wasCurriculumFinishedBefore) {
           // Entire Course / Level Completion: +200 XP & Cookies bonus
@@ -2243,20 +2324,22 @@ function AppContent() {
       saveStoredCompletedLessonsBatch(newCompleted, sessionUser);
 
       if (sessionUser) {
-        trackEvent('Lesson Completed', {
-          lesson_id: lessonId,
-          lesson_name: currentLesson.title,
-          xp_earned: totalEarnedXp,
-          coins_earned: Math.floor(totalEarnedXp / 5),
-          score: Math.round(sessionAccuracy * 100),
-        }, sessionUser);
-
-        if (bonusXp > 0) {
-          trackEvent('Quest Completed', {
-            quest_name: 'Bonus Quest',
-            xp_reward: bonusXp
+        try {
+          trackEvent('Lesson Completed', {
+            lesson_id: lessonId,
+            lesson_name: currentLesson.title,
+            xp_earned: totalEarnedXp,
+            coins_earned: Math.floor(totalEarnedXp / 5),
+            score: Math.round(sessionAccuracy * 100),
           }, sessionUser);
-        }
+
+          if (bonusXp > 0) {
+            trackEvent('Quest Completed', {
+              quest_name: 'Bonus Quest',
+              xp_reward: bonusXp
+            }, sessionUser);
+          }
+        } catch (_) {}
       }
 
       setLastXpEarned(isReplay ? 15 : totalEarnedXp);
@@ -2282,6 +2365,32 @@ function AppContent() {
           }
           if (typeof updatedProfile.weekly_xp === 'number') {
             setWeeklyXp(updatedProfile.weekly_xp);
+          }
+          if (typeof updatedProfile.streak === 'number') {
+            setStreak(updatedProfile.streak);
+          }
+          if (typeof updatedProfile.best_streak === 'number') {
+            setBestAnswerStreak(updatedProfile.best_streak);
+          }
+
+          // Trigger daily streak celebration if streak became active or incremented
+          if (typeof updatedProfile.streak === 'number' && updatedProfile.streak > 0) {
+            const cleanEmail = (sessionUser || '').toLowerCase().trim();
+            const todayStr = new Date().toLocaleDateString('en-CA');
+            const storageKey = `CHIKOO_STREAK_ANIMATION_RECORD_${cleanEmail}`;
+            try {
+              const raw = localStorage.getItem(storageKey);
+              const record = raw ? JSON.parse(raw) : null;
+              if (!record || record.date !== todayStr || record.streak < updatedProfile.streak) {
+                setTimeout(() => {
+                  setShowDailyStreakAnimation(true);
+                }, 1200);
+              }
+            } catch (_) {
+              setTimeout(() => {
+                setShowDailyStreakAnimation(true);
+              }, 1200);
+            }
           }
         }
         progressService.updateProfileData({
@@ -2327,8 +2436,9 @@ function AppContent() {
         });
       }
 
-      // Unmount the lesson component immediately to release memory
+      // Unmount the lesson component immediately to release memory & return to Adventure
       setActiveLesson(null);
+      setLoadingLesson(null);
       setShowGlobalConfetti(true);
       soundManager.play('complete');
 
@@ -2348,26 +2458,26 @@ function AppContent() {
       }
 
       // Check for badges
-      const newBadges = [...earnedBadges];
+      const newBadges = [...(earnedBadges || [])];
       const newlyEarned: string[] = [];
 
       const checkBadge = (id: string, condition: boolean) => {
-        if (condition && !earnedBadges.includes(id)) {
+        if (condition && !newBadges.includes(id)) {
           newBadges.push(id);
           newlyEarned.push(id);
         }
       };
 
-      const nextStreak = streak + 1;
+      const nextStreak = (streak || 0) + 1;
 
       checkBadge('b1', newCompleted.length >= 3);
       checkBadge('b2', nextStreak >= 5);
       checkBadge('b3', newCompleted.length >= 10);
-      checkBadge('b4', newCompleted.some(id => id.includes('ethics')));
-      checkBadge('b5', xp >= 1000);
-      checkBadge('b6', totalChestsClaimed >= 3);
+      checkBadge('b4', newCompleted.some(id => typeof id === 'string' && id.includes('ethics')));
+      checkBadge('b5', (xp || 0) >= 1000);
+      checkBadge('b6', (totalChestsClaimed || 0) >= 3);
       checkBadge('b7', sessionAccuracy === 1);
-      checkBadge('b8', bookmarkedLessons.length >= 5);
+      checkBadge('b8', (bookmarkedLessons || []).length >= 5);
 
       if (newlyEarned.length > 0) {
         setEarnedBadges(newBadges);
@@ -2422,6 +2532,11 @@ function AppContent() {
           }
         });
       }
+    } catch (err) {
+      console.error('[handleLessonComplete] Error finishing lesson:', err);
+      // Ensure the lesson is ALWAYS unmounted even if error occurs
+      setActiveLesson(null);
+      setLoadingLesson(null);
     } finally {
       // Release in-flight lock on next tick
       setTimeout(() => {
@@ -3050,7 +3165,7 @@ function AppContent() {
           const activeRank = getRankFromTrophies(trophies);
           return (
             <Header 
-              xp={xp} 
+              xp={xp} weeklyXp={weeklyXp} 
               gems={gems}
               rank={userRank}
               charging={energy} 
@@ -3196,6 +3311,12 @@ function AppContent() {
                     }
                   }}
                   skipHeartCheck={(() => {
+                    const lid = String(activeLesson?.id || '');
+                    return lid === 'recharge_quest' ||
+                      lid.startsWith('practice') ||
+                      completedLessons.some(id => String(id).toLowerCase() === lid.toLowerCase());
+                  })()}
+                  isReplay={(() => {
                     const lid = String(activeLesson?.id || '');
                     return lid === 'recharge_quest' ||
                       lid.startsWith('practice') ||
@@ -3643,6 +3764,14 @@ function AppContent() {
           }}
         />
       )}
+
+      {/* Android Hardware Back & In-App Exit Confirmation Modal */}
+      <AppExitConfirmationModal
+        isOpen={showExitModal}
+        streak={streak}
+        onStay={handleStay}
+        onExit={handleConfirmExit}
+      />
 
     </div>
         </>

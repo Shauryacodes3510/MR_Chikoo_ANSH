@@ -4,7 +4,8 @@ import {
   Settings2, Check, X, Edit3, Copy, Flame, Trophy,
   Target, BookOpen, Lock, Sparkles, Moon, Sun, 
   Globe, Music, Bell, Shield, Clock, HelpCircle, 
-  LogOut, Building2, ChevronRight, CheckCircle2, Award
+  LogOut, Building2, ChevronRight, CheckCircle2, Award,
+  Smartphone, Star
 } from 'lucide-react';
 import { soundManager } from '../lib/sounds';
 import { LEAGUES, AVATARS, ALL_BADGES } from '../constants';
@@ -102,33 +103,77 @@ export default function PlayerProfile({
   const [confettiActive, setConfettiActive] = useState(false);
   const [selectedDayRecord, setSelectedDayRecord] = useState<DayActivityRecord | null>(null);
 
-  // Dark Mode State
+  // Dark Mode State & Synchronization (Light | Dark | System)
+  type ThemePreference = 'light' | 'dark' | 'system';
+
+  const [themePreference, setThemePreference] = useState<ThemePreference>(() => {
+    try {
+      const saved = localStorage.getItem('CHIKOO_THEME_MODE');
+      if (saved === 'light' || saved === 'dark' || saved === 'system') return saved;
+      return 'system';
+    } catch {
+      return 'system';
+    }
+  });
+
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('CHIKOO_THEME_MODE') === 'dark' || document.documentElement.classList.contains('dark');
+      const saved = localStorage.getItem('CHIKOO_THEME_MODE');
+      if (saved === 'dark') return true;
+      if (saved === 'light') return false;
+      return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches || false;
     } catch {
       return false;
     }
   });
 
-  const toggleTheme = () => {
-    const nextDark = !isDarkMode;
-    setIsDarkMode(nextDark);
+  const selectTheme = (pref: ThemePreference) => {
+    setThemePreference(pref);
     try {
-      localStorage.setItem('CHIKOO_THEME_MODE', nextDark ? 'dark' : 'light');
+      localStorage.setItem('CHIKOO_THEME_MODE', pref);
     } catch (e) {
       console.warn('Could not save theme to localStorage', e);
     }
-    if (nextDark) {
+
+    let isDark = false;
+    if (pref === 'dark') {
+      isDark = true;
+    } else if (pref === 'light') {
+      isDark = false;
+    } else {
+      isDark = typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)')?.matches || false;
+    }
+
+    setIsDarkMode(isDark);
+    if (isDark) {
       document.documentElement.classList.add('dark');
       document.body.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
       document.body.classList.remove('dark');
     }
-    window.dispatchEvent(new CustomEvent('chikoo:theme_change', { detail: { mode: nextDark ? 'dark' : 'light' } }));
+
+    window.dispatchEvent(new CustomEvent('chikoo:theme_change', { detail: { preference: pref, mode: isDark ? 'dark' : 'light' } }));
     soundManager.play('click');
   };
+
+  useEffect(() => {
+    if (themePreference === 'system' && typeof window !== 'undefined' && window.matchMedia) {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handleSystemChange = (e: MediaQueryListEvent) => {
+        setIsDarkMode(e.matches);
+        if (e.matches) {
+          document.documentElement.classList.add('dark');
+          document.body.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+          document.body.classList.remove('dark');
+        }
+      };
+      mediaQuery.addEventListener('change', handleSystemChange);
+      return () => mediaQuery.removeEventListener('change', handleSystemChange);
+    }
+  }, [themePreference]);
 
   // Name editing
   const [isEditingUsername, setIsEditingUsername] = useState(false);
@@ -961,23 +1006,62 @@ export default function PlayerProfile({
                   </button>
                 </div>
 
-                {/* Dark Mode */}
-                <div className="pt-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {isDarkMode ? <Moon size={15} className="text-purple-400" /> : <Sun size={15} className="text-amber-500" />}
-                    <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Dark Mode</span>
+                {/* Theme Selection: Light, Dark, System */}
+                <div className="pt-3 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {themePreference === 'dark' ? (
+                        <Moon size={15} className="text-purple-400" />
+                      ) : themePreference === 'light' ? (
+                        <Sun size={15} className="text-amber-500" />
+                      ) : (
+                        <Smartphone size={15} className="text-blue-500" />
+                      )}
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">Theme</span>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      {themePreference === 'system' ? 'System Default' : `${themePreference} Mode`}
+                    </span>
                   </div>
-                  <button 
-                    onClick={toggleTheme}
-                    className={`w-10 h-5.5 rounded-full transition-colors relative cursor-pointer ${
-                      isDarkMode ? 'bg-[#8B35E8]' : 'bg-slate-200 dark:bg-slate-700'
-                    }`}
-                    aria-label="Toggle Dark Mode"
-                  >
-                    <div className={`w-4 h-4 rounded-full bg-white absolute top-0.75 shadow-xs transition-transform ${
-                      isDarkMode ? 'translate-x-5' : 'translate-x-1'
-                    }`} />
-                  </button>
+
+                  <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                    <button
+                      type="button"
+                      onClick={() => selectTheme('light')}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        themePreference === 'light'
+                          ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <Sun size={13} />
+                      <span>Light</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => selectTheme('dark')}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        themePreference === 'dark'
+                          ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <Moon size={13} />
+                      <span>Dark</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => selectTheme('system')}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        themePreference === 'system'
+                          ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <Smartphone size={13} />
+                      <span>System</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Interface Language */}
@@ -1088,6 +1172,19 @@ export default function PlayerProfile({
 
                 {/* Legal & Account Privacy Links */}
                 <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                  <a
+                    href="https://play.google.com/store/apps/details?id=com.learn.chikoo"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-amber-500 py-0.5"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Star size={15} className="text-amber-500 fill-amber-500/20" />
+                      <span>Rate Chikoo on Play Store</span>
+                    </div>
+                    <ChevronRight size={13} className="text-slate-400" />
+                  </a>
+
                   <a
                     href="/privacy-policy"
                     target="_blank"

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, memo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, CheckCircle2, AlertCircle, Star, Trophy, Zap, Flame, Music, Volume2, Loader2 } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Star, Trophy, Zap, Flame, Music, Volume2, Loader2, ChevronLeft, ChevronRight, Lightbulb, RotateCcw } from 'lucide-react';
+import { QuitLessonConfirmationModal } from './QuitLessonConfirmationModal';
 import { 
   Lesson, 
   Challenge, 
@@ -104,6 +105,7 @@ interface LessonSessionProps {
   onQuestionAnswered?: (isCorrect: boolean) => void;
   onRefillEnergy?: () => void;
   skipHeartCheck?: boolean; // free replay / practice / recharge: never block on hearts
+  isReplay?: boolean; // whether this level is being replayed/revised
   energy?: number;
   nextEnergyIn?: number | null;
 }
@@ -220,6 +222,7 @@ export default function LessonSession({
   onQuestionAnswered,
   onRefillEnergy,
   skipHeartCheck = false,
+  isReplay = false,
   energy = 25,
   nextEnergyIn = null
 }: LessonSessionProps) {
@@ -293,6 +296,44 @@ export default function LessonSession({
   const [displayCookies, setDisplayCookies] = useState(0);
   const [displayAccuracy, setDisplayAccuracy] = useState(0);
   const [displayStreak, setDisplayStreak] = useState(0);
+
+  // Lesson history and navigation state for reviewing previous screens and quit confirmation
+  const isReplayLevel = Boolean(isReplay || skipHeartCheck);
+  const [highestReachedIndex, setHighestReachedIndex] = useState(0);
+  const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  const [screenHistory, setScreenHistory] = useState<{
+    [index: number]: {
+      selectedOption: any;
+      isChecked: boolean;
+      isCorrect: boolean;
+      feedback?: 'correct' | 'incorrect' | null;
+    };
+  }>({});
+  const screenHistoryRef = useRef(screenHistory);
+  screenHistoryRef.current = screenHistory;
+
+  // Listen to Android hardware back button and browser back arrow
+  useEffect(() => {
+    const handleQuitPrompt = () => {
+      setShowQuitConfirm(true);
+    };
+    window.addEventListener('CHIKOO_PROMPT_QUIT_LESSON', handleQuitPrompt);
+    return () => {
+      window.removeEventListener('CHIKOO_PROMPT_QUIT_LESSON', handleQuitPrompt);
+    };
+  }, []);
+
+  const handleRequestClose = useCallback(() => {
+    soundManager.play('click');
+    setShowQuitConfirm(true);
+  }, []);
+
+  const handleConfirmQuit = useCallback(() => {
+    setShowQuitConfirm(false);
+    exitFullscreen();
+    onClose();
+    soundManager.play('click');
+  }, [onClose]);
 
   const { language } = useTranslation();
   const [ttsLanguage, setTtsLanguage] = useState<string>(() => language || 'en');
@@ -416,10 +457,13 @@ export default function LessonSession({
         feedbackTimerRef.current = null;
       }
 
-      const finalAccuracy = correctCount / adaptiveChallenges.length;
+      // Filter only real interactive question challenges for score/accuracy (exclude slides & reading explainers)
+      const interactiveQuestions = adaptiveChallenges.filter(c => !isReadingChallenge(c));
+      const totalQuestionCount = interactiveQuestions.length > 0 ? interactiveQuestions.length : adaptiveChallenges.length;
+      const finalAccuracy = totalQuestionCount > 0 ? Math.min(1, correctCount / totalQuestionCount) : 1;
       const accuracyPct = isNaN(finalAccuracy) ? 100 : Math.round(finalAccuracy * 100);
       const isChallengeOrGuardian = lesson.isChallenge || lesson.isBonus;
-      const didPass = !isChallengeOrGuardian || finalAccuracy >= 0.8;
+      const didPass = !isChallengeOrGuardian || finalAccuracy >= 0.6;
       
       if (didPass) {
         soundManager.play('complete');
@@ -506,10 +550,41 @@ export default function LessonSession({
     };
   }, []);
 
+  const canGoPrevious = currentIndex > 0;
+  const canGoNext = isReplayLevel
+    ? currentIndex < adaptiveChallenges.length - 1
+    : currentIndex < highestReachedIndex;
+
+  const switchToIndex = useCallback((targetIndex: number) => {
+    if (isTransitioning) return;
+    if (targetIndex < 0 || targetIndex >= adaptiveChallenges.length) return;
+    if (!isReplayLevel && targetIndex > highestReachedIndex) return;
+
+    soundManager.play('click');
+    setFeedback(null);
+    setShowExplanation(false);
+    setCurrentIndex(targetIndex);
+  }, [adaptiveChallenges.length, highestReachedIndex, isReplayLevel, isTransitioning]);
+
+  const handleGoToPrevious = useCallback(() => {
+    if (canGoPrevious) {
+      switchToIndex(currentIndex - 1);
+    }
+  }, [canGoPrevious, currentIndex, switchToIndex]);
+
+  const handleGoToNext = useCallback(() => {
+    if (canGoNext) {
+      switchToIndex(currentIndex + 1);
+    } else if (isChecked && currentIndex < adaptiveChallenges.length - 1) {
+      handleContinue();
+    }
+  }, [canGoNext, currentIndex, isChecked, adaptiveChallenges.length, switchToIndex]);
+
   const handleCloudCovered = useCallback(() => {
     if (pendingIndexRef.current !== null) {
       const nextIdx = pendingIndexRef.current;
       pendingIndexRef.current = null;
+      setHighestReachedIndex(prev => Math.max(prev, nextIdx));
       setCurrentIndex(nextIdx);
     }
   }, []);
@@ -536,12 +611,32 @@ export default function LessonSession({
 
     if (!isChecked && !isReading && !forceSkip) return;
     
+    // Save reading screen completion into history
+    if (isReading) {
+      setScreenHistory(prev => ({
+        ...prev,
+        [currentIndex]: {
+          selectedOption: true,
+          isChecked: true,
+          isCorrect: true,
+          feedback: 'correct'
+        }
+      }));
+    }
+
     soundManager.play('click');
     setFeedback(null);
+
+    // If currently reviewing a past question, simply step forward smoothly
+    if (currentIndex < highestReachedIndex) {
+      switchToIndex(currentIndex + 1);
+      return;
+    }
 
     if (currentIndex < adaptiveChallenges.length - 1) {
       const nextIndex = currentIndex + 1;
       const nextChallenge = adaptiveChallenges[nextIndex];
+      setHighestReachedIndex(prev => Math.max(prev, nextIndex));
 
       // CORE NAVIGATION RULE:
       // ONLY show the cloud transition when:
@@ -570,17 +665,26 @@ export default function LessonSession({
       soundManager.play('complete');
       enterFullscreen();
     }
-  }, [isChecked, isTransitioning, currentIndex, adaptiveChallenges, correctCount, onComplete, xpEarned, maxSessionStreak]);
+  }, [isChecked, isTransitioning, currentIndex, adaptiveChallenges, correctCount, onComplete, xpEarned, maxSessionStreak, highestReachedIndex, switchToIndex]);
 
   useEffect(() => {
-    setProgress((currentIndex / adaptiveChallenges.length) * 100);
-    // Robustly reset state when challenge changes to prevent cross-exercise state leakage
+    setProgress(((currentIndex + 1) / adaptiveChallenges.length) * 100);
+    // Robustly reset or restore state when challenge changes
     const isReadingScreen = isReadingChallenge(currentChallenge);
-    setSelectedOption(isReadingScreen ? true : null);
-    setIsChecked(isReadingScreen ? true : false);
-    setIsCorrect(isReadingScreen ? true : false);
+    const saved = screenHistoryRef.current[currentIndex];
+
+    if (saved) {
+      setSelectedOption(saved.selectedOption);
+      setIsChecked(saved.isChecked);
+      setIsCorrect(saved.isCorrect);
+      setFeedback(saved.feedback ?? (saved.isCorrect ? 'correct' : 'incorrect'));
+    } else {
+      setSelectedOption(isReadingScreen ? true : null);
+      setIsChecked(isReadingScreen ? true : false);
+      setIsCorrect(isReadingScreen ? true : false);
+      setFeedback(null);
+    }
     setShowExplanation(false);
-    setFeedback(null); // Clear any lingering feedback
     
     if (currentChallenge?.type === 'rapid_fire' && !hasStartedRapidFire) {
       setShowRapidFireWarning(true);
@@ -870,6 +974,15 @@ export default function LessonSession({
 
     setIsCorrect(correct);
     setIsChecked(true);
+
+    const answerRecord = {
+      selectedOption: optionToUse,
+      isChecked: true,
+      isCorrect: correct,
+      feedback: (correct ? 'correct' : 'incorrect') as 'correct' | 'incorrect',
+    };
+    setScreenHistory(prev => ({ ...prev, [currentIndex]: answerRecord }));
+    setHighestReachedIndex(prev => Math.max(prev, currentIndex));
     
     if (correct) {
       setFeedback('correct');
@@ -1581,14 +1694,13 @@ export default function LessonSession({
   };
 
   if (isSessionFinished) {
-    const finalAccuracy = adaptiveChallenges.length > 0 ? correctCount / adaptiveChallenges.length : 1;
+    const interactiveQuestions = adaptiveChallenges.filter(c => !isReadingChallenge(c));
+    const totalQuestionCount = interactiveQuestions.length > 0 ? interactiveQuestions.length : adaptiveChallenges.length;
+    const finalAccuracy = totalQuestionCount > 0 ? Math.min(1, correctCount / totalQuestionCount) : 1;
     const isChallengeOrGuardian = lesson.isChallenge || lesson.isBonus;
-    const requiredAccuracy = isChallengeOrGuardian ? 0.8 : 0;
-    const didPass = !isChallengeOrGuardian || finalAccuracy >= 0.8;
-    const hasInteractiveScreens = adaptiveChallenges.some((c) => isInteractiveCScreen(c));
-    const sessionMascotUrl = hasInteractiveScreens
-      ? CHIKOO_INTERACTIVE_COMPLETION_MASCOT_URL
-      : CHIKOO_COMPLETION_MASCOT_URL;
+    const requiredAccuracy = isChallengeOrGuardian ? 0.6 : 0;
+    const didPass = !isChallengeOrGuardian || finalAccuracy >= 0.6;
+    const sessionMascotUrl = '/heading_aibo.webp';
 
     return (
       <MainLessonCompletionScreen
@@ -1598,25 +1710,38 @@ export default function LessonSession({
             : 'Lesson Completed'
         }
         correctCount={correctCount}
-        totalQuestions={adaptiveChallenges.length}
+        totalQuestions={totalQuestionCount}
         earnedCookies={displayCookies || Number(lesson.xpReward || (lesson as any).xp_reward || 100)}
+        earnedXp={Number(lesson.xpReward || (lesson as any).xp_reward || 100)}
         streak={maxSessionStreak || 1}
-        requiredAccuracy={requiredAccuracy}
+        requiredAccuracy={0.6}
         userRating={userRating}
         onRatingChange={(rating) => setUserRating(rating)}
         onRetry={() => {
           if (isCompletingRef.current) return;
           isCompletingRef.current = true;
+          setTimeout(() => { isCompletingRef.current = false; }, 2000);
           setIsCompleting(true);
           exitFullscreen();
-          onComplete(0, finalAccuracy, maxSessionStreak || 1);
+          try {
+            onComplete(0, finalAccuracy, maxSessionStreak || 1);
+          } catch (err) {
+            console.error('[LessonSession] onRetry error:', err);
+            onClose();
+          }
         }}
         onProceed={() => {
           if (isCompletingRef.current) return;
           isCompletingRef.current = true;
+          setTimeout(() => { isCompletingRef.current = false; }, 2000);
           setIsCompleting(true);
           exitFullscreen();
-          onComplete(Number(lesson.xpReward || (lesson as any).xp_reward || 100), isNaN(finalAccuracy) ? 1.0 : finalAccuracy, maxSessionStreak || 1);
+          try {
+            onComplete(Number(lesson.xpReward || (lesson as any).xp_reward || 100), isNaN(finalAccuracy) ? 1.0 : finalAccuracy, maxSessionStreak || 1);
+          } catch (err) {
+            console.error('[LessonSession] onProceed error:', err);
+            onClose();
+          }
         }}
         lessonId={lesson.id}
         screenId={currentChallenge?.id || 'completion'}
@@ -1758,10 +1883,14 @@ export default function LessonSession({
           selectedOption={selectedOption}
           isChecked={isChecked}
           onContinue={handleContinue}
+          onPrevious={handleGoToPrevious}
+          canGoPrevious={canGoPrevious}
+          onNext={handleGoToNext}
+          canGoNext={canGoNext}
           progress={progress}
           currentIndex={currentIndex}
           totalChallenges={adaptiveChallenges.length}
-          onClose={onClose}
+          onClose={handleRequestClose}
           energy={energy}
           nextEnergyIn={nextEnergyIn}
           audioIsPlaying={screenAudio.isPlaying}
@@ -1771,6 +1900,14 @@ export default function LessonSession({
           onReplay={screenAudio.replay}
           language={ttsLanguage}
           onLanguageChange={(newLang) => setTtsLanguage(newLang)}
+        />
+
+        <QuitLessonConfirmationModal
+          isOpen={showQuitConfirm}
+          currentQuestionIndex={currentIndex}
+          totalQuestions={adaptiveChallenges.length}
+          onResume={() => setShowQuitConfirm(false)}
+          onQuit={handleConfirmQuit}
         />
       </div>
     );
@@ -1843,21 +1980,27 @@ export default function LessonSession({
       />
 
       {/* Top Bar with Playful Candy Gradient Progress Bar */}
-      <div className="px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between gap-3 sm:gap-6 border-b border-slate-100 dark:border-slate-800 bg-white/90 dark:bg-[#172033]/95 backdrop-blur-md sticky top-0 z-50">
+      <div className="px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between gap-2 sm:gap-4 border-b border-slate-100 dark:border-slate-800 bg-white/90 dark:bg-[#172033]/95 backdrop-blur-md sticky top-0 z-50">
         <button 
-          onClick={() => {
-            exitFullscreen();
-            onClose();
-            soundManager.play('click');
-          }} 
+          onClick={handleRequestClose} 
           className="p-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl transition-all cursor-pointer text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 active:scale-95"
           title="Exit Lesson"
         >
           <X className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={2.5} />
         </button>
 
-        {/* Playful Animated Progress Bar */}
-        <div className="flex-1 relative py-1">
+        {/* Previous Button */}
+        <button
+          onClick={handleGoToPrevious}
+          disabled={!canGoPrevious || isTransitioning}
+          className="p-2 sm:p-2.5 rounded-2xl transition-all cursor-pointer text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 disabled:opacity-25 disabled:pointer-events-none"
+          title="Previous Question"
+        >
+          <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={2.5} />
+        </button>
+
+        {/* Playful Animated Progress Bar + Screen Segments */}
+        <div className="flex-1 flex flex-col gap-1.5 relative py-1">
           <div className="h-3.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner border border-slate-200/60 dark:border-slate-700 relative">
             <motion.div 
               initial={{ width: 0 }}
@@ -1869,7 +2012,50 @@ export default function LessonSession({
               <div className="absolute inset-0 bg-white/25 rounded-full h-1/2" />
             </motion.div>
           </div>
+
+          {/* Segment Dots for quick jump / review */}
+          {adaptiveChallenges.length > 1 && (
+            <div className="flex items-center justify-between gap-1 px-0.5">
+              {adaptiveChallenges.map((_, idx) => {
+                const isCurrent = idx === currentIndex;
+                const isUnlocked = isReplayLevel || idx <= highestReachedIndex;
+                const historyItem = screenHistory[idx];
+                const isPastCorrect = historyItem?.isCorrect;
+                const isPastAnswered = historyItem?.isChecked;
+
+                return (
+                  <button
+                    key={idx}
+                    disabled={!isUnlocked || isTransitioning}
+                    onClick={() => switchToIndex(idx)}
+                    title={`Question ${idx + 1}${!isUnlocked ? ' (Locked)' : ''}`}
+                    className={`h-1.5 rounded-full flex-1 transition-all cursor-pointer disabled:cursor-not-allowed ${
+                      isCurrent
+                        ? 'bg-chikoo-blue-500 h-2 shadow-[0_0_8px_rgba(30,136,229,0.7)] scale-y-125'
+                        : isPastAnswered
+                          ? isPastCorrect
+                            ? 'bg-emerald-400 dark:bg-emerald-500 hover:opacity-80'
+                            : 'bg-rose-400 dark:bg-rose-500 hover:opacity-80'
+                          : isUnlocked
+                            ? 'bg-slate-300 dark:bg-slate-600 hover:bg-slate-400'
+                            : 'bg-slate-200/50 dark:bg-slate-800/80 opacity-40'
+                    }`}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
+
+        {/* Next Button */}
+        <button
+          onClick={handleGoToNext}
+          disabled={!canGoNext || isTransitioning}
+          className="p-2 sm:p-2.5 rounded-2xl transition-all cursor-pointer text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 disabled:opacity-25 disabled:pointer-events-none"
+          title="Next Question"
+        >
+          <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={2.5} />
+        </button>
 
         <div className="flex items-center gap-2 sm:gap-3">
           <LanguageSelector variant="hud" />
@@ -2095,7 +2281,29 @@ export default function LessonSession({
             </motion.div>
           )}
 
-          {isChecked && !isCorrect && !isReadingChallenge(currentChallenge) ? (
+          {currentIndex < highestReachedIndex ? (
+            <div className="flex flex-col sm:flex-row gap-3 w-full">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExplanation(true);
+                  soundManager.play('click');
+                }}
+                className="btn-3d flex-1 py-4 text-base sm:text-lg font-black uppercase tracking-wider bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 border-2 border-amber-300 dark:border-amber-700/60 hover:bg-amber-100 shadow-[0_4px_0_#d97706] active:translate-y-1 active:shadow-none cursor-pointer rounded-2xl flex items-center justify-center gap-2"
+              >
+                <Lightbulb className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                <span>💡 EXPLORE EXPLANATION</span>
+              </button>
+              <button
+                type="button"
+                disabled={isTransitioning}
+                onClick={() => handleGoToNext()}
+                className="btn-3d flex-1 py-4 text-base sm:text-lg font-black uppercase tracking-wider btn-3d-blue cursor-pointer disabled:opacity-50 disabled:pointer-events-none rounded-2xl shadow-[0_6px_0_#1899d6] text-white flex items-center justify-center gap-2"
+              >
+                <span>{currentIndex + 1 === highestReachedIndex ? 'RESUME LEVEL 🚀' : 'NEXT SCREEN ➔'}</span>
+              </button>
+            </div>
+          ) : isChecked && !isCorrect && !isReadingChallenge(currentChallenge) ? (
             <div className="flex flex-col sm:flex-row gap-3 w-full">
               <button
                 onClick={() => {
@@ -2132,24 +2340,46 @@ export default function LessonSession({
               </button>
             </div>
           ) : (
-            <button
-              onClick={isChecked ? () => handleContinue() : () => handleCheck()}
-              disabled={isTransitioning || !isQuestionTypingComplete || (selectedOption === null && !['spot_the_ai', 'rapid_fire'].includes(currentChallenge?.type))}
-              className={`btn-3d w-full py-4.5 text-xl font-display font-black uppercase tracking-wider cursor-pointer rounded-2xl transition-all disabled:opacity-50 disabled:pointer-events-none ${
-                (selectedOption === null && !['spot_the_ai', 'rapid_fire'].includes(currentChallenge?.type)) || !isQuestionTypingComplete
-                  ? 'bg-slate-200 text-slate-400 shadow-[0_5px_0_#CBD5E1]' 
-                  : isChecked 
-                    ? isCorrect 
-                      ? 'btn-3d-green shadow-[0_8px_0_#059669] text-white' 
-                      : 'btn-3d-red shadow-[0_8px_0_#c2410c] text-white'
-                    : 'btn-3d-blue shadow-[0_8px_0_#1899d6] text-white'
-              }`}
-            >
-              {isChecked ? 'CONTINUE ➔' : 'CHECK ANSWER'}
-            </button>
+            <div className="flex items-center gap-3 w-full">
+              {isReplayLevel && (
+                <button
+                  type="button"
+                  disabled={isTransitioning}
+                  onClick={() => handleGoToNext()}
+                  className="py-4 px-4 rounded-2xl text-sm font-extrabold uppercase tracking-wider text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                  title="Skip to next screen"
+                >
+                  Skip ➔
+                </button>
+              )}
+              <button
+                onClick={isChecked ? () => handleContinue() : () => handleCheck()}
+                disabled={isTransitioning || !isQuestionTypingComplete || (selectedOption === null && !['spot_the_ai', 'rapid_fire'].includes(currentChallenge?.type))}
+                className={`btn-3d flex-1 py-4.5 text-xl font-display font-black uppercase tracking-wider cursor-pointer rounded-2xl transition-all disabled:opacity-50 disabled:pointer-events-none ${
+                  (selectedOption === null && !['spot_the_ai', 'rapid_fire'].includes(currentChallenge?.type)) || !isQuestionTypingComplete
+                    ? 'bg-slate-200 text-slate-400 shadow-[0_5px_0_#CBD5E1]' 
+                    : isChecked 
+                      ? isCorrect 
+                        ? 'btn-3d-green shadow-[0_8px_0_#059669] text-white' 
+                        : 'btn-3d-red shadow-[0_8px_0_#c2410c] text-white'
+                      : 'btn-3d-blue shadow-[0_8px_0_#1899d6] text-white'
+                }`}
+              >
+                {isChecked ? 'CONTINUE ➔' : 'CHECK ANSWER'}
+              </button>
+            </div>
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal when quitting/leaving a lesson */}
+      <QuitLessonConfirmationModal
+        isOpen={showQuitConfirm}
+        currentQuestionIndex={currentIndex}
+        totalQuestions={adaptiveChallenges.length}
+        onResume={() => setShowQuitConfirm(false)}
+        onQuit={handleConfirmQuit}
+      />
     </div>
   );
 }

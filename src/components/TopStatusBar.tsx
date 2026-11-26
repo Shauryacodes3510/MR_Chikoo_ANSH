@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flame, Wifi, WifiOff, Heart } from 'lucide-react';
-import { LanguageSelector } from './LanguageSelector';
+import { Flame, Wifi, WifiOff, Heart, Zap } from 'lucide-react';
 import { World, UserWorldProgress } from '../lib/supabase';
 import { soundManager } from '../lib/sounds';
 import { useTranslation } from '../lib/translation/TranslationContext';
@@ -13,6 +12,8 @@ interface TopStatusBarProps {
   streak: number;
   gems: number; // cookies
   energy?: number; // lives
+  weeklyXp?: number;
+  xp?: number;
   onRefillRequest?: () => void;
   selectedAvatarId?: string;
   onProfileClick?: () => void;
@@ -203,6 +204,8 @@ function TopStatusBar({
   streak,
   gems,
   energy = 25,
+  weeklyXp = 0,
+  xp = 0,
   onRefillRequest,
   className = "",
   worlds,
@@ -341,8 +344,17 @@ function TopStatusBar({
           {/* Delicate Vertical Separator */}
           <div className="h-4.5 w-[1.5px] bg-slate-200/45 dark:bg-white/10 self-center rounded-full" />
 
-          {/* 4. Embedded Global Language Selector */}
-          <LanguageSelector variant="embedded" />
+          {/* 5. Weekly XP Item (Zap / Lightning - Indigo/Purple) */}
+          <ResourceHUDItem 
+            id="tour-weekly-xp"
+            icon={
+              <Zap size={16} className="fill-indigo-500 text-indigo-500" />
+            }
+            value={weeklyXp ?? xp ?? 0}
+            label={t('header.weekly_xp', 'Weekly XP')}
+            colorClass="text-indigo-600 dark:text-indigo-400"
+            sparkleColor="text-indigo-400"
+          />
 
           {/* 5. Subtle Non-Intrusive Offline / Slow Connection Banner */}
           {(isOffline || isSlowConnection) && (

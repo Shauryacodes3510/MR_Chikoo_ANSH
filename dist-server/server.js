@@ -3762,6 +3762,77 @@ if (redisUrl) {
 var redis = redisClient;
 var CACHE_TTL = 3600;
 
+// src/lib/questConfig.ts
+var IST_OFFSET_MS = 5.5 * 60 * 60 * 1e3;
+var DAY_MS = 24 * 60 * 60 * 1e3;
+function getISTWeekStart(date = /* @__PURE__ */ new Date()) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const diffToMonday = (ist.getUTCDay() + 6) % 7;
+  return new Date(ist.getTime() - diffToMonday * DAY_MS).toISOString().slice(0, 10);
+}
+var sum = (rows, pick) => rows.reduce((acc, r) => acc + (Number(pick(r)) || 0), 0);
+var DAILY_QUESTS = [
+  {
+    id: "lesson_1",
+    period: "daily",
+    title: "Warm Up",
+    description: "Complete 1 lesson today",
+    target: 1,
+    rewardCookies: 20,
+    rewardXp: 15,
+    icon: "lesson",
+    color: "bg-chikoo-blue-500",
+    progress: (rows) => sum(rows, (r) => r.lessons_completed)
+  },
+  {
+    id: "lesson_3",
+    period: "daily",
+    title: "On a Roll",
+    description: "Complete 3 lessons today",
+    target: 3,
+    rewardCookies: 40,
+    rewardXp: 30,
+    icon: "lessons",
+    color: "bg-purple-500",
+    progress: (rows) => sum(rows, (r) => r.lessons_completed)
+  },
+  {
+    id: "practice_1",
+    period: "daily",
+    title: "Arena Time",
+    description: "Play 1 Practice Arena session",
+    target: 1,
+    rewardCookies: 25,
+    rewardXp: 15,
+    icon: "practice",
+    color: "bg-chikoo-red-500",
+    progress: (rows) => sum(rows, (r) => r.battles_played)
+  },
+  {
+    id: "xp_50",
+    period: "daily",
+    title: "XP Hunter",
+    description: "Earn 50 XP today",
+    target: 50,
+    rewardCookies: 30,
+    rewardXp: 20,
+    icon: "xp",
+    color: "bg-amber-500",
+    progress: (rows) => sum(rows, (r) => r.xp_earned)
+  }
+];
+var DAILY_BONUS_QUEST = {
+  id: "all_done",
+  period: "daily",
+  title: "Perfect Day",
+  description: "Claim all daily quests",
+  target: DAILY_QUESTS.length,
+  rewardCookies: 50,
+  rewardXp: 50,
+  icon: "bonus",
+  color: "bg-amber-600"
+};
+
 // server.app.ts
 dotenv.config();
 function getMatchingIllustrationUrl2(topic, details) {
@@ -4794,11 +4865,13 @@ Strict Requirements:
       if (!client) {
         return res.status(503).json({ success: false, error: "Database not configured" });
       }
-      const { data, error } = await client.from("profiles").select("username, xp, weekly_xp, gems, streak, energy, avatar_id, theme_id, created_at").order("weekly_xp", { ascending: false }).limit(500);
+      const { data, error } = await client.from("profiles").select("username, xp, weekly_xp, weekly_xp_week, gems, streak, energy, avatar_id, theme_id, created_at").order("weekly_xp_week", { ascending: false, nullsFirst: false }).order("weekly_xp", { ascending: false }).limit(500);
       if (error) {
         throw error;
       }
+      const currentWeek = getISTWeekStart();
       const sanitizedLeaderboard = (data || []).map((row, index) => {
+        const weeklyXp = String(row.weekly_xp_week ?? "").slice(0, 10) === currentWeek ? Number(row.weekly_xp ?? 0) : 0;
         let safeName = (row.username || "").trim();
         if (!safeName || safeName.includes("@")) {
           safeName = `Explorer_${index + 1}`;
@@ -4808,9 +4881,10 @@ Strict Requirements:
           id: `player_${index + 1}`,
           username: safeName,
           name: safeName,
-          xp: Number(row.weekly_xp ?? 0),
+          xp: weeklyXp,
           gems: Number(row.gems ?? 0),
-          weekly_xp: Number(row.weekly_xp ?? 0),
+          weekly_xp: weeklyXp,
+          weekly_xp_week: row.weekly_xp_week ?? null,
           streak: Number(row.streak ?? 0),
           energy: Number(row.energy ?? 5),
           avatar_id: row.avatar_id || "user",

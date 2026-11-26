@@ -100,7 +100,28 @@ class RewardService {
     const profile = progressService.getProfile();
     const claimed = profile?.claimed_rewards || [];
     const cleanId = (claimId || '').trim();
-    return claimed.includes(cleanId) || claimed.includes(`challenge_${cleanId}`) || claimed.includes(`daily_chest_${cleanId}`);
+    if (claimed.includes(cleanId) || claimed.includes(`challenge_${cleanId}`) || claimed.includes(`daily_chest_${cleanId}`)) {
+      return true;
+    }
+    const questKey = cleanId.startsWith('quest_') ? cleanId : `quest_${cleanId}`;
+    const bareKey = cleanId.replace(/^quest_/, '');
+    if (claimed.includes(questKey) || claimed.includes(bareKey)) {
+      return true;
+    }
+    // Check localStorage fallback for fast offline/refresh continuity
+    const profId = profile?.id || email || this.getActiveEmail();
+    if (profId && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(`CHIKOO_CLAIMED_QUEST_KEYS_${profId}`);
+        if (raw) {
+          const list: string[] = JSON.parse(raw);
+          if (list.includes(cleanId) || list.includes(questKey) || list.includes(bareKey)) {
+            return true;
+          }
+        }
+      } catch (_) {}
+    }
+    return false;
   }
 
   /**
@@ -185,6 +206,21 @@ class RewardService {
         if (res.granted) {
           this.notifyListeners(result);
           this.recordTransaction(cleanClaimId, res.amount, rewardType || 'challenge', res.message, metadata, activeEmail);
+        }
+        if (res.granted || res.alreadyClaimed) {
+          try {
+            const profId = currentProfile?.id || activeEmail;
+            if (profId && typeof localStorage !== 'undefined') {
+              const storageKey = `CHIKOO_CLAIMED_QUEST_KEYS_${profId}`;
+              const raw = localStorage.getItem(storageKey);
+              const list: string[] = raw ? JSON.parse(raw) : [];
+              const bareId = cleanClaimId.replace(/^quest_/, '');
+              if (!list.includes(cleanClaimId) || !list.includes(bareId)) {
+                list.push(cleanClaimId, bareId);
+                localStorage.setItem(storageKey, JSON.stringify(Array.from(new Set(list))));
+              }
+            }
+          } catch (_) {}
         }
         return result;
       }

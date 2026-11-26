@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, memo, useState, useMemo } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
-import { RotateCcw, ChevronRight, Sparkles, CheckCircle2, Flame, Trophy, Star } from 'lucide-react';
+import { motion, useReducedMotion, AnimatePresence } from 'framer-motion';
+import { RotateCcw, ChevronRight, Sparkles, CheckCircle2, Flame, Trophy, Star, Zap } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { soundManager } from '../lib/sounds';
 import { useScreenAudio } from '../hooks/useScreenAudio';
@@ -10,8 +10,8 @@ import { LanguageSelector } from './LanguageSelector';
 // @ts-ignore
 import cookiesIcon from '@/cookies.webp';
 
-export const CHIKOO_COMPLETION_MASCOT_URL = "/lesson_completion_mascot.webp";
-export const CHIKOO_INTERACTIVE_COMPLETION_MASCOT_URL = "https://i.postimg.cc/25yH51Xb/f6360331-4e16-48e0-bb04-72a556ee6596.webp";
+export const CHIKOO_COMPLETION_MASCOT_URL = "/heading_aibo.webp";
+export const CHIKOO_INTERACTIVE_COMPLETION_MASCOT_URL = "/heading_aibo.webp";
 
 export const INTERACTIVE_C_SCREEN_TYPES = new Set([
   'c1_multiple_choice',
@@ -83,8 +83,9 @@ export interface MainLessonCompletionScreenProps {
   correctCount: number;
   totalQuestions: number;
   earnedCookies: number;
+  earnedXp?: number;
   streak?: number;
-  requiredAccuracy?: number; // defaults to 0.8 (80%)
+  requiredAccuracy?: number; // defaults to 0.6 (60%)
   userRating?: number | null;
   onRatingChange?: (rating: number) => void;
   onProceed: () => void;
@@ -455,8 +456,9 @@ export const MainLessonCompletionScreen: React.FC<MainLessonCompletionScreenProp
   correctCount,
   totalQuestions,
   earnedCookies,
+  earnedXp,
   streak = 1,
-  requiredAccuracy = 0.8,
+  requiredAccuracy = 0.6,
   userRating,
   onRatingChange,
   onProceed,
@@ -493,8 +495,34 @@ export const MainLessonCompletionScreen: React.FC<MainLessonCompletionScreenProp
     return mascotUrl || CHIKOO_COMPLETION_MASCOT_URL;
   }, [isInteractiveScreenSession, mascotUrl]);
 
-  const finalAccuracy = totalQuestions > 0 ? correctCount / totalQuestions : 1;
-  const didPass = finalAccuracy >= requiredAccuracy;
+  // Score & Performance derived values (60% threshold rule)
+  const accuracyPercent = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 100;
+  const isHighPerformance = accuracyPercent >= 60;
+  const didPass = isHighPerformance;
+
+  // Local interactive rating state (delightful client-side animation without writing to DB)
+  const [internalRating, setInternalRating] = useState<number | null>(userRating || null);
+  const [hasRated, setHasRated] = useState(false);
+  const [ratingHover, setRatingHover] = useState<number | null>(null);
+
+  const handleRateClick = (star: number) => {
+    setInternalRating(star);
+    setHasRated(true);
+    try {
+      soundManager.play('pop');
+      confetti({
+        particleCount: 30,
+        spread: 55,
+        origin: { y: 0.72 },
+        colors: ['#fbbf24', '#f59e0b', '#f97316', '#a855f7']
+      });
+    } catch (_) {}
+    if (onRatingChange) {
+      try {
+        onRatingChange(star);
+      } catch (_) {}
+    }
+  };
 
   // Celebration confetti trigger in Phase 3
   const [showConfetti, setShowConfetti] = useState(false);
@@ -507,9 +535,9 @@ export const MainLessonCompletionScreen: React.FC<MainLessonCompletionScreenProp
     return () => clearTimeout(t);
   }, [prefersReducedMotion, didPass]);
 
-  const screenText = didPass 
-    ? "Look at you go! You completed this adventure with flying colors and earned your cookies! Ready for the next quest?" 
-    : "Great effort, explorer! Every practice run makes you stronger. Let's try again together!";
+  const screenText = isHighPerformance
+    ? `Chikoo is happy with your progress! You scored ${accuracyPercent}% and earned these rewards! Ready for the next adventure?`
+    : `Chikoo believes in you! You scored ${accuracyPercent}%. Explorer, let's practice and try again together!`;
 
   // Audio Voice Narration
   const screenAudio = useScreenAudio({
@@ -551,6 +579,7 @@ export const MainLessonCompletionScreen: React.FC<MainLessonCompletionScreenProp
   const handleProceedClick = () => {
     if (isCompletingRef.current) return;
     isCompletingRef.current = true;
+    setTimeout(() => { isCompletingRef.current = false; }, 2000);
     stopAllVoice();
     try {
       soundManager.play('click');
@@ -563,6 +592,7 @@ export const MainLessonCompletionScreen: React.FC<MainLessonCompletionScreenProp
   const handleRetryClick = () => {
     if (isCompletingRef.current) return;
     isCompletingRef.current = true;
+    setTimeout(() => { isCompletingRef.current = false; }, 2000);
     stopAllVoice();
     try {
       soundManager.play('click');
@@ -576,13 +606,13 @@ export const MainLessonCompletionScreen: React.FC<MainLessonCompletionScreenProp
     }
   };
 
-  const displayTitle = didPass 
-    ? "LESSON COMPLETE" 
-    : (title ? title.replace(/[\p{Emoji}\u200d\uFE0F]/gu, '').trim().toUpperCase() : "KEEP EXPLORING");
+  const displayTitle = isHighPerformance 
+    ? (title || "CHIKOO IS PROUD OF YOU!") 
+    : "KEEP PRACTICING!";
 
-  const displayMessage = didPass
-    ? (subtitle || "Look at you go! You completed this adventure with flying colors and earned your cookies! Ready for the next quest?")
-    : "Great effort, explorer! Every practice run makes you stronger. Let's try again together!";
+  const displayMessage = isHighPerformance
+    ? (subtitle || `Chikoo is happy with your progress! You scored ${accuracyPercent}% and he gifted you these rewards! Keep shining, explorer!`)
+    : `Chikoo believes in you! You scored ${accuracyPercent}%. Explorer, every try makes you stronger. Let's try again together!`;
 
   return (
     <div
@@ -736,99 +766,150 @@ export const MainLessonCompletionScreen: React.FC<MainLessonCompletionScreenProp
               </p>
             </motion.div>
 
-            {/* Phase 4: Reward Summary (Cookies, Score, Streak) */}
+            {/* Phase 4: Dynamic Reward Summary Deck (Spacious 2x2 Grid so text never clips) */}
             <motion.div
               initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.9, ease: "easeOut" }}
-              className="w-full flex items-center justify-center gap-3 sm:gap-4 mt-5 px-1"
+              transition={{ duration: 0.5, delay: 0.85, ease: "easeOut" }}
+              className="w-full grid grid-cols-2 gap-2.5 sm:gap-3 mt-4 px-1"
             >
-              {/* Earned Cookies Card */}
-              <div className="flex-1 bg-white/80 dark:bg-[#182035]/90 backdrop-blur-sm border border-[#EADBCA] dark:border-slate-700/60 rounded-2xl py-2.5 px-2 flex flex-col items-center justify-center text-center shadow-[0_4px_12px_rgba(200,160,100,0.08)] dark:shadow-none">
-                <img 
-                  src={cookiesIcon} 
-                  alt="Cookies" 
-                  className="w-7 h-7 sm:w-8 sm:h-8 object-contain drop-shadow-xs select-none" 
-                />
-                <span className="text-xl sm:text-2xl font-black text-[#202536] dark:text-white tabular-nums mt-1 leading-none">
-                  +{earnedCookies}
+              {/* 1. Score & Accuracy Card */}
+              <div className="bg-white/90 dark:bg-[#182035]/95 backdrop-blur-sm border border-[#EADBCA] dark:border-slate-700/60 rounded-2xl py-2.5 px-3 flex flex-col items-center justify-center text-center shadow-[0_4px_12px_rgba(200,160,100,0.08)] dark:shadow-none min-h-[66px]">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 size={18} className={isHighPerformance ? "text-emerald-500" : "text-amber-500"} />
+                  <span className="text-base sm:text-lg font-black text-[#202536] dark:text-white tabular-nums">
+                    {correctCount}/{totalQuestions}
+                  </span>
+                </div>
+                <span className={`text-[10px] font-black uppercase tracking-wider mt-0.5 ${isHighPerformance ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                  {accuracyPercent}% Score
                 </span>
-                <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-[#8A7963] dark:text-slate-400 mt-1">
+              </div>
+
+              {/* 2. Earned Cookies Card */}
+              <div className="bg-white/90 dark:bg-[#182035]/95 backdrop-blur-sm border border-[#EADBCA] dark:border-slate-700/60 rounded-2xl py-2.5 px-3 flex flex-col items-center justify-center text-center shadow-[0_4px_12px_rgba(200,160,100,0.08)] dark:shadow-none min-h-[66px]">
+                <div className="flex items-center gap-1.5">
+                  <img 
+                    src={cookiesIcon} 
+                    alt="Cookies" 
+                    className="w-5 h-5 object-contain select-none" 
+                  />
+                  <span className="text-base sm:text-lg font-black text-[#202536] dark:text-white tabular-nums">
+                    +{earnedCookies}
+                  </span>
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 mt-0.5">
                   Cookies
                 </span>
               </div>
 
-              {/* Accuracy / Questions Card */}
-              <div className="flex-1 bg-white/80 dark:bg-[#182035]/90 backdrop-blur-sm border border-[#EADBCA] dark:border-slate-700/60 rounded-2xl py-2.5 px-2 flex flex-col items-center justify-center text-center shadow-[0_4px_12px_rgba(200,160,100,0.08)] dark:shadow-none">
-                <CheckCircle2 size={28} className="text-[#168653] dark:text-emerald-400 stroke-[2.5]" />
-                <span className="text-xl sm:text-2xl font-black text-[#202536] dark:text-white tabular-nums mt-1 leading-none">
-                  {correctCount}/{totalQuestions}
-                </span>
-                <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-[#8A7963] dark:text-slate-400 mt-1">
-                  Score
+              {/* 3. Earned XP Card */}
+              <div className="bg-white/90 dark:bg-[#182035]/95 backdrop-blur-sm border border-[#EADBCA] dark:border-slate-700/60 rounded-2xl py-2.5 px-3 flex flex-col items-center justify-center text-center shadow-[0_4px_12px_rgba(200,160,100,0.08)] dark:shadow-none min-h-[66px]">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles size={18} className="text-indigo-500 fill-indigo-500/20" />
+                  <span className="text-base sm:text-lg font-black text-[#202536] dark:text-white tabular-nums">
+                    +{earnedXp || earnedCookies}
+                  </span>
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mt-0.5">
+                  XP Points
                 </span>
               </div>
 
-              {/* Streak Badge Card (if streak >= 1) */}
-              {streak > 0 && (
-                <div className="flex-1 bg-white/80 dark:bg-[#182035]/90 backdrop-blur-sm border border-[#EADBCA] dark:border-slate-700/60 rounded-2xl py-2.5 px-2 flex flex-col items-center justify-center text-center shadow-[0_4px_12px_rgba(200,160,100,0.08)] dark:shadow-none">
-                  <Flame size={28} className="text-[#FF6B00] fill-[#FF6B00]/20 stroke-[2.5]" />
-                  <span className="text-xl sm:text-2xl font-black text-[#202536] dark:text-white tabular-nums mt-1 leading-none">
-                    {streak}🔥
-                  </span>
-                  <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-[#8A7963] dark:text-slate-400 mt-1">
-                    Streak
+              {/* 4. In a row / Answer Streak Card */}
+              <div className="bg-white/90 dark:bg-[#182035]/95 backdrop-blur-sm border border-[#EADBCA] dark:border-slate-700/60 rounded-2xl py-2.5 px-3 flex flex-col items-center justify-center text-center shadow-[0_4px_12px_rgba(200,160,100,0.08)] dark:shadow-none min-h-[66px]">
+                <div className="flex items-center gap-1.5">
+                  <Flame size={18} className="text-[#FF6B00] fill-[#FF6B00]/20" />
+                  <span className="text-base sm:text-lg font-black text-[#202536] dark:text-white tabular-nums">
+                    {streak > 0 ? streak : 1}
                   </span>
                 </div>
-              )}
+                <span className="text-[10px] font-black uppercase tracking-wider text-orange-600 dark:text-orange-400 mt-0.5">
+                  In A Row
+                </span>
+              </div>
             </motion.div>
 
-            {/* Interactive 5-Star Rating Widget (Polished for Light & Dark) */}
-            {onRatingChange && (
-              <motion.div
-                initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.45, delay: 1.05, ease: "easeOut" }}
-                className="w-full mt-3.5 pt-3 border-t border-slate-200/60 dark:border-slate-800/80 flex flex-col items-center justify-center gap-1.5"
-              >
-                <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                  Rate this Adventure
+            {/* Interactive 5-Star Rating Widget with Instant Animation (No DB write) */}
+            <motion.div
+              initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, delay: 0.95, ease: "easeOut" }}
+              className="w-full mt-3.5 pt-2.5 border-t border-amber-200/50 dark:border-slate-800/80 flex flex-col items-center justify-center gap-1.5 select-none"
+            >
+              <div className="flex items-center justify-between w-full px-2 text-[11px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                <span className="flex items-center gap-1.5">
+                  <Star size={13} className="text-amber-500 fill-amber-500" />
+                  <span>Rate this Adventure</span>
                 </span>
-                <div className="flex items-center gap-1.5">
-                  {[1, 2, 3, 4, 5].map((star) => {
-                    const isFilled = (userRating || 0) >= star;
-                    return (
-                      <button
-                        key={`star-${star}`}
-                        type="button"
-                        onClick={() => {
-                          soundManager.play('pop');
-                          onRatingChange(star);
-                        }}
-                        className="p-1 cursor-pointer transition-transform hover:scale-125 active:scale-95 text-amber-400 focus:outline-none"
-                        title={`Rate ${star} star${star > 1 ? 's' : ''}`}
-                      >
-                        <Star
-                          size={20}
-                          className={`transition-colors ${
-                            isFilled
-                              ? 'fill-amber-400 text-amber-500 drop-shadow-[0_2px_8px_rgba(251,191,36,0.5)]'
-                              : 'text-slate-300 dark:text-slate-600 hover:text-amber-300'
-                          }`}
-                        />
-                      </button>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
+                <span className="text-amber-600 dark:text-amber-400 font-bold normal-case text-xs transition-opacity duration-150">
+                  {ratingHover === 1 && "Needs work 😕"}
+                  {ratingHover === 2 && "Okay 🙂"}
+                  {ratingHover === 3 && "Good 😊"}
+                  {ratingHover === 4 && "Great! 😃"}
+                  {ratingHover === 5 && "Loved it! 🤩"}
+                  {ratingHover === null && internalRating !== null && `${internalRating} / 5 Stars ⭐`}
+                </span>
+              </div>
 
-            {/* Phase 5: Primary Continuation Action Button */}
+              {/* Fixed hit box buttons with no size scaling on button to prevent cursor flickering */}
+              <div 
+                className="flex items-center justify-center gap-1 py-1"
+                onMouseLeave={() => setRatingHover(null)}
+              >
+                {[1, 2, 3, 4, 5].map((star) => {
+                  const activeHover = ratingHover !== null && ratingHover > 0;
+                  const currentLevel = activeHover ? ratingHover : (internalRating || 0);
+                  const isFilled = currentLevel >= star;
+                  return (
+                    <button
+                      key={`star-${star}`}
+                      type="button"
+                      onMouseEnter={() => setRatingHover(star)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleRateClick(star);
+                      }}
+                      className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors group focus:outline-none select-none hover:bg-amber-100/40 dark:hover:bg-amber-950/30"
+                      title={`Rate ${star} star${star > 1 ? 's' : ''}`}
+                    >
+                      <Star
+                        size={24}
+                        className={`pointer-events-none transition-transform duration-150 group-hover:scale-125 group-active:scale-90 ${
+                          isFilled
+                            ? 'fill-amber-400 text-amber-500 drop-shadow-[0_2px_8px_rgba(251,191,36,0.6)]'
+                            : 'fill-transparent text-slate-300 dark:text-slate-600'
+                        }`}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Animated feedback badge when user taps a star */}
+              <AnimatePresence>
+                {hasRated && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8, y: -4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={{ type: "spring", stiffness: 350, damping: 20 }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-100/90 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700/60 text-amber-800 dark:text-amber-200 text-xs font-bold shadow-xs mt-0.5"
+                  >
+                    <span>🎉</span>
+                    <span>Chikoo noted your {internalRating}★ rating! Thank you!</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+
+            {/* Phase 5: Primary Action Buttons */}
             <motion.div
               initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 1.15, ease: "easeOut" }}
-              className="w-full mt-5"
+              transition={{ duration: 0.5, delay: 1.05, ease: "easeOut" }}
+              className="w-full mt-4"
             >
               {didPass ? (
                 <motion.button

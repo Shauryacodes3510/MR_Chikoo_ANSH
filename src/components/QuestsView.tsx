@@ -62,7 +62,19 @@ function QuestsView({
   const [showCookieWheel, setShowCookieWheel] = useState(false);
   const [tab, setTab] = useState<QuestPeriod>('daily');
   const [rows, setRows] = useState<UserDailyActivityRecord[]>([]);
-  const [claimedKeys, setClaimedKeys] = useState<string[]>([]);
+  const [claimedKeys, setClaimedKeys] = useState<string[]>(() => {
+    const prof = progressService.getProfile();
+    const profId = prof?.id || prof?.email;
+    const fromProfile = prof?.claimed_rewards || [];
+    let fromStorage: string[] = [];
+    if (profId && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(`CHIKOO_CLAIMED_QUEST_KEYS_${profId}`);
+        if (raw) fromStorage = JSON.parse(raw);
+      } catch (_) {}
+    }
+    return Array.from(new Set([...fromProfile, ...fromStorage]));
+  });
   const [claimingKey, setClaimingKey] = useState<string | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [now, setNow] = useState<number>(Date.now());
@@ -82,8 +94,17 @@ function QuestsView({
   const weekKey = getISTWeekStart(new Date(now));
 
   const loadRows = useCallback(async () => {
-    const userId = progressService.getProfile()?.id;
-    const data = await fetchUserDailyActivityRecords(userId, 8);
+    const prof = progressService.getProfile();
+    const userId = prof?.id || prof?.email;
+    if (userId && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(`CHIKOO_CLAIMED_QUEST_KEYS_${userId}`);
+        const fromStorage: string[] = raw ? JSON.parse(raw) : [];
+        const fromProfile: string[] = prof?.claimed_rewards || [];
+        setClaimedKeys(prev => Array.from(new Set([...prev, ...fromStorage, ...fromProfile])));
+      } catch (_) {}
+    }
+    const data = await fetchUserDailyActivityRecords(prof?.id, 8);
     setRows(data);
   }, []);
 
@@ -105,12 +126,31 @@ function QuestsView({
   const weekRows = useMemo(() => rows.filter(r => String(r.activity_date).slice(0, 10) >= weekKey), [rows, weekKey]);
 
   const isKeyClaimed = (key: string) =>
-    claimedKeys.includes(key) || rewardService.isClaimed(`quest_${key}`);
+    claimedKeys.includes(key) ||
+    claimedKeys.includes(`quest_${key}`) ||
+    rewardService.isClaimed(`quest_${key}`) ||
+    rewardService.isClaimed(key);
 
   // Daily chest now resets at IST midnight (same as spin wheel & quests).
   const isChestClaimed = isSameISTDay(lastChestClaimedAt, new Date(now));
   const chestTimeLeft = formatCountdown(msUntilISTMidnight(now));
   const periodTimeLeft = formatCountdown(tab === 'daily' ? msUntilISTMidnight(now) : msUntilISTWeekEnd(now));
+
+  const persistClaimedKey = (key: string) => {
+    const fullKey = key.startsWith('quest_') ? key : `quest_${key}`;
+    const bareKey = key.replace(/^quest_/, '');
+    setClaimedKeys(prev => Array.from(new Set([...prev, key, fullKey, bareKey])));
+    const prof = progressService.getProfile();
+    const profId = prof?.id || prof?.email;
+    if (profId && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(`CHIKOO_CLAIMED_QUEST_KEYS_${profId}`);
+        const list: string[] = raw ? JSON.parse(raw) : [];
+        const next = Array.from(new Set([...list, key, fullKey, bareKey]));
+        localStorage.setItem(`CHIKOO_CLAIMED_QUEST_KEYS_${profId}`, JSON.stringify(next));
+      } catch (_) {}
+    }
+  };
 
   const claim = async (q: Omit<QuestDefinition, 'progress'>) => {
     const key = periodicClaimKey(q, new Date(now));
@@ -121,14 +161,14 @@ function QuestsView({
       if (res.granted) {
         soundManager.play('complete');
         onClaimGems(q.rewardCookies, res.newBalance);
-        setClaimedKeys(prev => [...prev, key]);
+        persistClaimedKey(key);
         const xpUpdates: any = {};
         if (res.xp !== undefined) xpUpdates.xp = res.xp;
         if (res.weekly_xp !== undefined) xpUpdates.weekly_xp = res.weekly_xp;
         if (Object.keys(xpUpdates).length) progressService.updateProfileLocally(xpUpdates);
         try { await recordUserDailyActivity({ questsDelta: 1, userId: progressService.getProfile()?.id }); } catch (_) {}
       } else if (res.alreadyClaimed) {
-        setClaimedKeys(prev => [...prev, key]);
+        persistClaimedKey(key);
       } else {
         const msgs: Record<string, string> = {
           daily_cap_reached: "Daily cookie limit reached. Try again after midnight.",
@@ -300,11 +340,7 @@ function QuestsView({
         whileTap={{ scale: 0.98 }}
         onClick={() => {
           soundManager.play('click');
-          if (onNavigateTab) {
-            onNavigateTab('practice');
-          } else {
-            setShowCookieWheel(true);
-          }
+          setShowCookieWheel(true);
         }}
         className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950 rounded-[2.5rem] p-7 text-white relative overflow-hidden shadow-2xl border-2 border-amber-400/50 group cursor-pointer"
       >
@@ -326,11 +362,7 @@ function QuestsView({
                 onClick={(e) => {
                   e.stopPropagation();
                   soundManager.play('click');
-                  if (onNavigateTab) {
-                    onNavigateTab('practice');
-                  } else {
-                    setShowCookieWheel(true);
-                  }
+                  setShowCookieWheel(true);
                 }}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-black font-display text-xs uppercase tracking-wider shadow-[0_4px_12px_rgba(245,158,11,0.4)] group-hover:brightness-110 cursor-pointer"
               >
@@ -381,6 +413,7 @@ function QuestsView({
               <CookieWheel
                 title="AAA Lucky Spin"
                 subtitle="Spin to win bonus rewards!"
+                showInternalModal={true}
                 onClaimReward={async (amount) => {
                   const spinRef = generateSpinReference();
                   // Wheel rewards only award cookies and strictly do NOT increment weekly XP (SPIN_XP = 0)
@@ -390,15 +423,6 @@ function QuestsView({
                     soundManager.play('complete');
                   }
                   setShowCookieWheel(false);
-                  if (onNavigateTab) {
-                    onNavigateTab('practice');
-                  }
-                }}
-                onSpinStart={() => {
-                  setShowCookieWheel(false);
-                  if (onNavigateTab) {
-                    onNavigateTab('practice');
-                  }
                 }}
               />
             </motion.div>

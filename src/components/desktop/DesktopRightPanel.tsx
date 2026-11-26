@@ -1,5 +1,5 @@
-import React, { memo, useState, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import React, { memo, useState, useEffect, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Trophy, 
   Sparkles, 
@@ -20,6 +20,24 @@ import { LanguageSelector } from '../LanguageSelector';
 import { useTranslation } from '../../lib/translation/TranslationContext';
 import { soundManager } from '../../lib/sounds';
 import { rewardService } from '../../lib/rewardService';
+import { progressService } from '../../lib/progressService';
+import {
+  fetchUserDailyActivityRecords,
+  recordUserDailyActivity,
+  subscribeToUserDailyActivity,
+  UserDailyActivityRecord
+} from '../../lib/userDailyActivityService';
+import {
+  DAILY_QUESTS,
+  WEEKLY_QUESTS,
+  DAILY_BONUS_QUEST,
+  getISTDateString,
+  getISTWeekStart,
+  isSameISTDay,
+  msUntilISTMidnight,
+  formatCountdown,
+  periodicClaimKey
+} from '../../lib/questConfig';
 
 // WebP icons
 import cookiesIcon from '@/cookies.webp';
@@ -72,47 +90,18 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
   className = ''
 }: DesktopRightPanelProps) {
   const { t } = useTranslation();
-  // 1. CHEST CLAIM STATUS & 24H COUNTDOWN TIMER
-  const [timeLeft, setTimeLeft] = useState<string>('');
+  // 1. CHEST STATUS — same IST-midnight reset as QuestsView, so both screens always agree
+  const [now, setNow] = useState<number>(Date.now());
   const [isClaimingChest, setIsClaimingChest] = useState<boolean>(false);
 
-  const isClaimed = useMemo(() => {
-    if (!lastChestClaimedAt) return false;
-    const claimTime = new Date(lastChestClaimedAt).getTime();
-    const now = new Date().getTime();
-    return now - claimTime < 24 * 60 * 60 * 1000;
-  }, [lastChestClaimedAt]);
-
+  // One ticking clock drives the chest timer AND the midnight rollover of the quests
   useEffect(() => {
-    if (!lastChestClaimedAt) {
-      setTimeLeft('');
-      return;
-    }
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
-    const updateTimer = () => {
-      const claimTime = new Date(lastChestClaimedAt).getTime();
-      const nextClaimTime = claimTime + 24 * 60 * 60 * 1000;
-      const now = new Date().getTime();
-      const diff = nextClaimTime - now;
-
-      if (diff <= 0) {
-        setTimeLeft('');
-      } else {
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-        setTimeLeft(
-          `${hours.toString().padStart(2, '0')}h ${minutes
-            .toString()
-            .padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`
-        );
-      }
-    };
-
-    updateTimer();
-    const timer = setInterval(updateTimer, 1000);
-    return () => clearInterval(timer);
-  }, [lastChestClaimedAt]);
+  const isClaimed = isSameISTDay(lastChestClaimedAt, new Date(now));
+  const timeLeft = formatCountdown(msUntilISTMidnight(now));
 
   const handleChestClick = async () => {
     if (isClaimed || isClaimingChest) return;
@@ -134,52 +123,184 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
     }
   };
 
-  // 2. REAL-TIME ACTIVE QUESTS (Calculated from user stats)
-  const quests = useMemo(() => {
-    const accuracyPercent = Math.round(accuracy * 100);
-    return [
-      {
-        id: 'quest-lessons',
-        title: 'Complete 3 Lessons',
-        current: Math.min(3, completedCount),
-        total: 3,
-        reward: 50,
-        unit: 'lessons',
-        color: 'from-sky-500 to-blue-600',
-        barColor: 'bg-sky-500'
-      },
-      {
-        id: 'quest-cookies',
-        title: 'Collect 250 Cookies',
-        current: Math.min(250, gems),
-        total: 250,
-        reward: 100,
-        unit: 'cookies',
-        color: 'from-amber-500 to-yellow-500',
-        barColor: 'bg-amber-500'
-      },
-      {
-        id: 'quest-streak',
-        title: '3-Day Streak Hero',
-        current: Math.min(3, streak),
-        total: 3,
-        reward: 75,
-        unit: 'days',
-        color: 'from-rose-500 to-orange-500',
-        barColor: 'bg-rose-500'
-      },
-      {
-        id: 'quest-accuracy',
-        title: 'Sharp Mind (90%+ Accuracy)',
-        current: Math.min(90, accuracyPercent),
-        total: 90,
-        reward: 60,
-        unit: '%',
-        color: 'from-emerald-500 to-green-600',
-        barColor: 'bg-emerald-500'
+  // 2. REAL DAILY QUESTS — same data source as QuestsView (user_daily_activity rows + claim keys)
+  const [rows, setRows] = useState<UserDailyActivityRecord[]>([]);
+  const [claimedKeys, setClaimedKeys] = useState<string[]>(() => {
+    const prof = progressService.getProfile();
+    const profId = prof?.id || prof?.email;
+    const fromProfile = prof?.claimed_rewards || [];
+    let fromStorage: string[] = [];
+    if (profId && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(`CHIKOO_CLAIMED_QUEST_KEYS_${profId}`);
+        if (raw) fromStorage = JSON.parse(raw);
+      } catch (_) {}
+    }
+    return Array.from(new Set([...fromProfile, ...fromStorage]));
+  });
+  const [claimingKey, setClaimingKey] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
+
+  const todayKey = getISTDateString(new Date(now));
+
+  const loadRows = useCallback(async () => {
+    const prof = progressService.getProfile();
+    const userId = prof?.id || prof?.email;
+    if (userId && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(`CHIKOO_CLAIMED_QUEST_KEYS_${userId}`);
+        const fromStorage: string[] = raw ? JSON.parse(raw) : [];
+        const fromProfile: string[] = prof?.claimed_rewards || [];
+        setClaimedKeys(prev => Array.from(new Set([...prev, ...fromStorage, ...fromProfile])));
+      } catch (_) {}
+    }
+    const data = await fetchUserDailyActivityRecords(prof?.id, 8);
+    setRows(data);
+  }, []);
+
+  // Refetch on mount, when the IST day changes, after any reward, and on realtime activity updates
+  useEffect(() => { loadRows(); }, [loadRows, todayKey]);
+
+  useEffect(() => {
+    const onReward = () => { loadRows(); };
+    window.addEventListener('chikooRewardGranted', onReward);
+    const userId = progressService.getProfile()?.id;
+    const unsub = userId ? subscribeToUserDailyActivity(userId, () => { loadRows(); }) : null;
+    return () => {
+      window.removeEventListener('chikooRewardGranted', onReward);
+      unsub?.();
+    };
+  }, [loadRows]);
+
+  const todayRows = useMemo(
+    () => rows.filter(r => String(r.activity_date).slice(0, 10) === todayKey),
+    [rows, todayKey]
+  );
+
+  const isKeyClaimed = (key: string) =>
+    claimedKeys.includes(key) ||
+    claimedKeys.includes(`quest_${key}`) ||
+    rewardService.isClaimed(`quest_${key}`) ||
+    rewardService.isClaimed(key);
+
+  const persistClaimedKey = (key: string) => {
+    const fullKey = key.startsWith('quest_') ? key : `quest_${key}`;
+    const bareKey = key.replace(/^quest_/, '');
+    setClaimedKeys(prev => Array.from(new Set([...prev, key, fullKey, bareKey])));
+    const prof = progressService.getProfile();
+    const profId = prof?.id || prof?.email;
+    if (profId && typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(`CHIKOO_CLAIMED_QUEST_KEYS_${profId}`);
+        const list: string[] = raw ? JSON.parse(raw) : [];
+        const next = Array.from(new Set([...list, key, fullKey, bareKey]));
+        localStorage.setItem(`CHIKOO_CLAIMED_QUEST_KEYS_${profId}`, JSON.stringify(next));
+      } catch (_) {}
+    }
+  };
+
+  const claimQuest = async (q: (typeof DAILY_QUESTS)[number]) => {
+    const key = periodicClaimKey(q, new Date(now));
+    if (claimingKey || isKeyClaimed(key)) return;
+    setClaimingKey(key);
+    try {
+      const res = await rewardService.claimQuest(key, q.rewardCookies, q.rewardXp);
+      if (res.granted) {
+        soundManager.play('complete');
+        onClaimGems(q.rewardCookies, res.newBalance);
+        persistClaimedKey(key);
+        const xpUpdates: any = {};
+        if (res.xp !== undefined) xpUpdates.xp = res.xp;
+        if (res.weekly_xp !== undefined) xpUpdates.weekly_xp = res.weekly_xp;
+        if (Object.keys(xpUpdates).length) progressService.updateProfileLocally(xpUpdates);
+        try { await recordUserDailyActivity({ questsDelta: 1, userId: progressService.getProfile()?.id }); } catch (_) {}
+      } else if (res.alreadyClaimed) {
+        persistClaimedKey(key);
+      } else {
+        const msgs: Record<string, string> = {
+          daily_cap_reached: 'Daily cookie limit reached. Try again after midnight.',
+          daily_limit_for_type: 'Daily quest claim limit reached. Try again tomorrow.',
+          unknown_claim: "This quest can't be claimed right now."
+        };
+        setClaimError(msgs[res.reason || ''] || "Couldn't claim this reward. Please try again.");
+        setTimeout(() => setClaimError(null), 4000);
       }
-    ];
-  }, [completedCount, gems, streak, accuracy]);
+    } finally {
+      setClaimingKey(null);
+    }
+  };
+
+  const weekKey = getISTWeekStart(new Date(now));
+  const weekRows = useMemo(
+    () => rows.filter(r => String(r.activity_date).slice(0, 10) >= weekKey),
+    [rows, weekKey]
+  );
+
+  // Daily quests mapping
+  const dailyQuests = useMemo(() => {
+    return DAILY_QUESTS.map(q => {
+      const key = periodicClaimKey(q, new Date(now));
+      const claimed = isKeyClaimed(key);
+      const current = Math.min(q.target, q.progress(todayRows));
+      const ready = !claimed && current >= q.target;
+      return { q, key, claimed, current, ready, period: 'daily' as const };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayRows, claimedKeys, todayKey, now]);
+
+  const claimedDailyCount = useMemo(() => dailyQuests.filter(x => x.claimed).length, [dailyQuests]);
+  const allDailyDone = claimedDailyCount >= DAILY_QUESTS.length;
+
+  // Bonus quest ("Perfect Day")
+  const bonusQuestItem = useMemo(() => {
+    const key = periodicClaimKey(DAILY_BONUS_QUEST as any, new Date(now));
+    const claimed = isKeyClaimed(key);
+    const current = claimedDailyCount;
+    const ready = allDailyDone && !claimed;
+    return {
+      q: { ...DAILY_BONUS_QUEST, progress: () => current },
+      key,
+      claimed,
+      current,
+      ready,
+      period: 'bonus' as const
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claimedDailyCount, allDailyDone, claimedKeys, now]);
+
+  // Weekly quests mapping
+  const weeklyQuests = useMemo(() => {
+    return WEEKLY_QUESTS.map(q => {
+      const key = periodicClaimKey(q, new Date(now));
+      const claimed = isKeyClaimed(key);
+      const current = Math.min(q.target, q.progress(weekRows));
+      const ready = !claimed && current >= q.target;
+      return { q, key, claimed, current, ready, period: 'weekly' as const };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekRows, claimedKeys, now]);
+
+  const claimedWeeklyCount = useMemo(() => weeklyQuests.filter(x => x.claimed).length, [weeklyQuests]);
+
+  // Window of at most 3 missions:
+  // - Completed/claimed quests are removed from the active view with exit animation
+  // - Ready to claim quests appear first
+  // - Once daily quests are completed, weekly quests slide in to fill the 3 slots
+  const visibleQuests = useMemo(() => {
+    const unclaimedDaily = dailyQuests.filter(x => !x.claimed);
+    const unclaimedBonus = allDailyDone && !bonusQuestItem.claimed ? [bonusQuestItem] : [];
+    const unclaimedWeekly = weeklyQuests.filter(x => !x.claimed);
+
+    const pool = [...unclaimedDaily, ...unclaimedBonus, ...unclaimedWeekly];
+
+    const sorted = [...pool].sort((a, b) => {
+      if (a.ready && !b.ready) return -1;
+      if (!a.ready && b.ready) return 1;
+      return 0;
+    });
+
+    return sorted.slice(0, 3);
+  }, [dailyQuests, allDailyDone, bonusQuestItem, weeklyQuests]);
 
   // 3. FEATURED STORE ITEMS SPOTLIGHT
   const featuredRewards = [
@@ -303,7 +424,8 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
           </div>
         </div>
 
-        {/* 2. DAILY MYSTERY CHEST (INTERACTIVE GAME CARD) */}
+        {/* CHEST + QUESTS ORDER: unclaimed -> big chest first. Claimed -> quests first, chest shrinks to a strip. */}
+        {!isClaimed && (
         <div className="relative rounded-3xl p-4.5 bg-gradient-to-br from-amber-50 via-amber-50/50 to-orange-50/30 dark:from-[#243149] dark:via-[#1e293b] dark:to-[#172033] border-2 border-amber-200/70 dark:border-amber-500/30 shadow-sm overflow-hidden text-center">
           {/* Subtle background glow */}
           <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400/10 rounded-full blur-2xl pointer-events-none" />
@@ -318,10 +440,10 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
               />
             </div>
 
-            <h3 className="font-display font-black text-slate-800 text-base leading-tight mb-0.5">
+            <h3 className="font-display font-black text-slate-800 dark:text-slate-100 text-base leading-tight mb-0.5">
               {t('quests.daily_chest', 'Daily Mystery Chest')}
             </h3>
-            <p className="text-[11px] font-medium text-slate-500 mb-3 max-w-[220px]">
+            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-3 max-w-[220px]">
               {isClaimed
                 ? t('quests.claimed_desc', 'Treasure claimed for today! Check back tomorrow.')
                 : t('quests.claim_desc', 'Unlock your daily bounty to win 50 bonus cookies!')}
@@ -347,6 +469,169 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
             )}
           </div>
         </div>
+
+        )}
+
+        {/* 4. ACTIVE QUESTS (Window of max 3 missions, auto-backfilled by weekly quests) */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <Target size={15} className="text-indigo-600 dark:text-indigo-400" aria-hidden="true" />
+              <h3 className="font-display font-black text-sm text-slate-800 dark:text-white">
+                {allDailyDone ? t('quests.weekly_quests', 'Weekly Quests') : t('quests.daily_quests', 'Daily Quests')}
+              </h3>
+              <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-black font-mono text-slate-500 dark:text-slate-300">
+                {allDailyDone
+                  ? `${claimedWeeklyCount}/${WEEKLY_QUESTS.length}`
+                  : `${claimedDailyCount}/${DAILY_QUESTS.length}`}
+              </span>
+            </div>
+
+            <button
+              onClick={() => {
+                soundManager.play('click');
+                setView('quests');
+              }}
+              className="min-h-[44px] px-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            >
+              <span>{t('quests.view_all', 'View All')}</span>
+              <ChevronRight size={12} aria-hidden="true" />
+            </button>
+          </div>
+
+          {claimError && (
+            <p role="alert" className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 px-1">
+              {claimError}
+            </p>
+          )}
+
+          <div className="space-y-2 relative">
+            <AnimatePresence mode="popLayout" initial={false}>
+              {visibleQuests.length > 0 ? (
+                visibleQuests.map(({ q, key, current, ready, period }) => {
+                  const percent = Math.min(100, Math.round((current / q.target) * 100));
+                  return (
+                    <motion.div
+                      layout
+                      key={key}
+                      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.9, y: -16, transition: { duration: 0.25 } }}
+                      transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                      className={`p-3 rounded-2xl border flex flex-col gap-2 transition-colors duration-200 ${
+                        ready
+                          ? 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-300/70 dark:border-amber-600/40 shadow-xs'
+                          : 'bg-slate-50 dark:bg-[#172033] border-slate-200/70 dark:border-slate-800 hover:bg-slate-100/50 dark:hover:bg-[#1c273e]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${ready ? 'bg-amber-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-display font-bold text-xs text-slate-800 dark:text-slate-100 truncate">
+                                {q.title}
+                              </span>
+                              <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded leading-none ${
+                                period === 'weekly'
+                                  ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300'
+                                  : period === 'bonus'
+                                  ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300'
+                                  : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
+                              }`}>
+                                {period === 'weekly' ? 'Weekly' : period === 'bonus' ? 'Bonus' : 'Daily'}
+                              </span>
+                            </div>
+                            <span className="block text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate">
+                              {q.description}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0 font-mono leading-tight">
+                          <div className="text-[10px] font-black text-amber-800 dark:text-amber-300">+{q.rewardCookies} 🍪</div>
+                          <div className="text-[10px] font-black text-indigo-600 dark:text-indigo-300">+{q.rewardXp} XP</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden"
+                          role="progressbar"
+                          aria-valuemin={0}
+                          aria-valuemax={q.target}
+                          aria-valuenow={current}
+                          aria-label={q.title}
+                        >
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${
+                              ready ? 'bg-amber-500' : period === 'weekly' ? 'bg-purple-500' : 'bg-indigo-500'
+                            }`}
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 font-mono shrink-0">
+                          {current}/{q.target}
+                        </span>
+                      </div>
+
+                      {ready && (
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          disabled={claimingKey === key}
+                          onClick={() => claimQuest(q)}
+                          className="w-full min-h-[40px] rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-display font-black text-xs uppercase tracking-wider shadow-[0_3px_0_#047857] active:translate-y-0.5 active:shadow-none transition-all duration-150 cursor-pointer disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 flex items-center justify-center gap-1.5"
+                        >
+                          <Sparkles size={13} className="text-emerald-100" />
+                          <span>{claimingKey === key ? 'Claiming...' : `Claim +${q.rewardCookies} 🍪 +${q.rewardXp} XP`}</span>
+                        </motion.button>
+                      )}
+                    </motion.div>
+                  );
+                })
+              ) : (
+                <motion.div
+                  key="all-cleared"
+                  layout
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50/50 to-emerald-50/30 dark:from-emerald-950/30 dark:via-[#1e293b] dark:to-[#172033] border-2 border-emerald-300/60 dark:border-emerald-600/40 text-center space-y-1.5 shadow-xs"
+                >
+                  <div className="w-9 h-9 mx-auto rounded-full bg-emerald-100 dark:bg-emerald-900/60 flex items-center justify-center text-emerald-600 dark:text-emerald-300">
+                    <CheckCircle2 size={20} />
+                  </div>
+                  <h4 className="font-display font-black text-xs text-emerald-900 dark:text-emerald-200 uppercase tracking-wider">
+                    All Missions Completed! 🎉
+                  </h4>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                    Awesome job! Check back at midnight for fresh daily quests.
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {isClaimed && (
+        <div className="flex items-center gap-3 rounded-2xl p-2.5 bg-amber-50/70 dark:bg-[#243149] border border-amber-200/80 dark:border-amber-500/30">
+          <ChestIcon className="w-10 h-10 shrink-0" isCurrent={false} isOpen={true} />
+          <div className="min-w-0 flex-1 text-left">
+            <h3 className="font-display font-black text-xs text-slate-800 dark:text-slate-100 leading-tight truncate">
+              {t('quests.daily_chest', 'Daily Mystery Chest')}
+            </h3>
+            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight">
+              {t('quests.claimed_short', 'Claimed today ✓')}
+            </p>
+          </div>
+          <div className="flex items-center gap-1 px-2.5 min-h-[32px] rounded-xl bg-amber-100/80 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-[11px] font-black font-mono shrink-0">
+            <Clock size={12} aria-hidden="true" />
+            <span>{timeLeft}</span>
+          </div>
+        </div>
+
+        )}
 
         {/* 3. LUCKY COOKIE WHEEL BANNER */}
         <div className="relative rounded-3xl p-4 bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-950 border border-indigo-400/30 text-white shadow-sm overflow-hidden">
@@ -441,75 +726,6 @@ export const DesktopRightPanel = memo(function DesktopRightPanel({
             </div>
           </div>
         )}
-
-        {/* 4. ACTIVE DAILY QUESTS */}
-        <div className="space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <Target size={15} className="text-indigo-600 dark:text-indigo-400" />
-              <h3 className="font-display font-black text-sm text-slate-800 dark:text-white">
-                {t('quests.title', 'Daily Quests')}
-              </h3>
-            </div>
-
-            <button
-              onClick={() => {
-                soundManager.play('click');
-                setView('quests');
-              }}
-              className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 flex items-center gap-0.5 cursor-pointer"
-            >
-              <span>{t('quests.view_all', 'View All')}</span>
-              <ChevronRight size={12} />
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            {quests.map((quest, qIdx) => {
-              const isCompleted = quest.current >= quest.total;
-              const percent = Math.min(100, Math.round((quest.current / quest.total) * 100));
-
-              return (
-                <div
-                  key={`desktop-quest-${quest.id || 'quest'}-${qIdx}`}
-                  className="p-3 rounded-2xl bg-slate-50 dark:bg-[#172033] border border-slate-200/70 dark:border-slate-800 flex flex-col gap-2 hover:bg-slate-100/50 dark:hover:bg-[#1c273e] transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {isCompleted ? (
-                        <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
-                      ) : (
-                        <div className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600 shrink-0" />
-                      )}
-                      <span className="font-display font-bold text-xs text-slate-800 dark:text-slate-100 truncate">
-                        {quest.title}
-                      </span>
-                    </div>
-
-                    <span className="px-1.5 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-black shrink-0 font-mono">
-                      +{quest.reward} 🍪
-                    </span>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          isCompleted ? 'bg-emerald-500' : quest.barColor
-                        }`}
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
-                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-400 font-mono shrink-0">
-                      {quest.current}/{quest.total}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
 
         {/* 5. REWARDS STORE SPOTLIGHT */}
         <div className="space-y-2.5 pt-1">

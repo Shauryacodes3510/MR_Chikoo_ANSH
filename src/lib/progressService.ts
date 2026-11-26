@@ -168,12 +168,13 @@ class ProgressService {
       try {
         const profile = await getProfile(cleanEmail, forceFresh, knownAuthUserId);
         
-        // Exact hydration from Supabase (Source of Truth)
-        // Removed localStorage merging - only use Supabase data.
-        const mergedCompleted = profile.completed_lessons || [];
-        
-        // Optionally update local cache for offline/instant-load scenarios,
-        // but treat Supabase as authoritative.
+        // Hydrate and safely merge with local storage cache so progress is never wiped on reload/offline
+        const localCompleted = getStoredCompletedLessonIds(cleanEmail);
+        const mergedCompleted = Array.from(new Set([
+          ...(profile.completed_lessons || []),
+          ...localCompleted
+        ]));
+        profile.completed_lessons = mergedCompleted;
         saveStoredCompletedLessonsBatch(mergedCompleted, cleanEmail);
 
         // Validate streak on login/init via Supabase RPC
@@ -429,13 +430,51 @@ class ProgressService {
     const currentLessons = current.completed_lessons || [];
     const isNew = !currentLessons.includes(lessonId);
     if (!isNew) {
-      // Practice replay: award 15 practice cookies, maintain daily activity, and record streak
+      // Practice replay / revision: award 15 practice cookies, maintain daily activity, and record streak
       const practiceCookies = 15;
       const practiceXp = xpReward !== undefined ? xpReward : practiceCookies;
       recordActiveDayInStorageAndCookies(new Date(), email, practiceCookies);
+
+      // Record streak activity via Supabase RPC for practice replay / revision
+      let verifiedStreak = current.streak;
+      let verifiedBestStreak = current.best_streak;
+      let verifiedLastStreakDate = current.last_streak_date;
+
       try {
-        await rpcRecordStreakActivity(`practice_${lessonId}_${new Date().toISOString().slice(0, 10)}`, email, current.id);
-      } catch (_) {}
+        const todayKey = new Date().toISOString().slice(0, 10);
+        const streakRes = await rpcRecordStreakActivity(`practice_${lessonId}_${todayKey}`, email, current.id);
+        if (streakRes.success && streakRes.streak > 0) {
+          verifiedStreak = streakRes.streak;
+          verifiedBestStreak = Math.max(verifiedBestStreak || 0, streakRes.best_streak);
+          if (streakRes.last_streak_date) {
+            verifiedLastStreakDate = streakRes.last_streak_date;
+          }
+        } else {
+          // Optimistic Streak Calculation Fallback for revision/practice
+          const todayStr = new Date().toLocaleDateString('en-CA');
+          const yDate = new Date();
+          yDate.setDate(yDate.getDate() - 1);
+          const yesterdayStr = yDate.toLocaleDateString('en-CA');
+
+          if (!current.last_streak_date) {
+            verifiedStreak = 1;
+          } else if (current.last_streak_date === todayStr) {
+            verifiedStreak = Math.max(1, current.streak || 1);
+          } else if (current.last_streak_date === yesterdayStr) {
+            verifiedStreak = (current.streak || 0) + 1;
+          } else {
+            verifiedStreak = 1;
+          }
+          verifiedBestStreak = Math.max(verifiedBestStreak || 0, verifiedStreak);
+          verifiedLastStreakDate = todayStr;
+        }
+      } catch (sErr) {
+        console.warn('[ProgressService] record_streak_activity replay notice:', sErr);
+        verifiedStreak = Math.max(1, verifiedStreak || 1);
+        verifiedBestStreak = Math.max(verifiedBestStreak || 0, verifiedStreak);
+        verifiedLastStreakDate = new Date().toLocaleDateString('en-CA');
+      }
+
       try {
         await recordUserDailyActivity({
           lessonsDelta: 1,
@@ -444,11 +483,35 @@ class ProgressService {
           userId: current.id
         });
       } catch (_) {}
+
       const rpcRes = await rpcCompleteChallenge(`practice_${lessonId}_${new Date().toISOString().slice(0, 10)}`, practiceCookies, practiceXp, email);
-      return this.updateProfileData({
+
+      await this.updateProfileData({
         gems: rpcRes.new_balance ?? rpcRes.gems ?? rpcRes.newBalance,
         ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
-        ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {})
+        ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {}),
+        streak: verifiedStreak,
+        best_streak: verifiedBestStreak,
+        last_streak_date: verifiedLastStreakDate
+      });
+
+      if (rpcRes.weekly_xp !== undefined || rpcRes.xp !== undefined) {
+        this.updateProfileLocally({
+          ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
+          ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {}),
+          streak: verifiedStreak,
+          best_streak: verifiedBestStreak,
+          last_streak_date: verifiedLastStreakDate
+        });
+      }
+
+      const reloaded = await this.initProfile(email, true);
+      return this.updateProfileLocally({
+        ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: Math.max(reloaded.weekly_xp || 0, rpcRes.weekly_xp) } : {}),
+        ...(rpcRes.xp !== undefined ? { xp: Math.max(reloaded.xp || 0, rpcRes.xp) } : {}),
+        streak: verifiedStreak,
+        best_streak: verifiedBestStreak,
+        last_streak_date: verifiedLastStreakDate
       });
     }
     const newCompletedLessons = [...currentLessons, lessonId];
@@ -480,7 +543,7 @@ class ProgressService {
     let verifiedLastStreakDate = current.last_streak_date;
     try {
       const streakRes = await rpcRecordStreakActivity(`lesson_${lessonId}`, email, current.id);
-      if (streakRes.success) {
+      if (streakRes.success && streakRes.streak > 0) {
         verifiedStreak = streakRes.streak;
         verifiedBestStreak = Math.max(verifiedBestStreak || 0, streakRes.best_streak);
         if (streakRes.last_streak_date) {
@@ -654,6 +717,48 @@ class ProgressService {
     const current = this.currentProfile || await this.initProfile(email);
     const sessId = sessionId || `practice_${Date.now()}`;
     const effectiveXp = xpEarned !== undefined ? xpEarned : (cookiesEarned || 50);
+
+    recordActiveDayInStorageAndCookies(new Date(), email, cookiesEarned);
+
+    // Record streak activity via Supabase RPC for practice/arena session
+    let verifiedStreak = current.streak;
+    let verifiedBestStreak = current.best_streak;
+    let verifiedLastStreakDate = current.last_streak_date;
+
+    try {
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const streakRes = await rpcRecordStreakActivity(`session_${sessId}_${todayKey}`, email, current.id);
+      if (streakRes.success && streakRes.streak > 0) {
+        verifiedStreak = streakRes.streak;
+        verifiedBestStreak = Math.max(verifiedBestStreak || 0, streakRes.best_streak);
+        if (streakRes.last_streak_date) {
+          verifiedLastStreakDate = streakRes.last_streak_date;
+        }
+      } else {
+        const todayStr = new Date().toLocaleDateString('en-CA');
+        const yDate = new Date();
+        yDate.setDate(yDate.getDate() - 1);
+        const yesterdayStr = yDate.toLocaleDateString('en-CA');
+
+        if (!current.last_streak_date) {
+          verifiedStreak = 1;
+        } else if (current.last_streak_date === todayStr) {
+          verifiedStreak = Math.max(1, current.streak || 1);
+        } else if (current.last_streak_date === yesterdayStr) {
+          verifiedStreak = (current.streak || 0) + 1;
+        } else {
+          verifiedStreak = 1;
+        }
+        verifiedBestStreak = Math.max(verifiedBestStreak || 0, verifiedStreak);
+        verifiedLastStreakDate = todayStr;
+      }
+    } catch (sErr) {
+      console.warn('[ProgressService] recordPracticeSession streak notice:', sErr);
+      verifiedStreak = Math.max(1, verifiedStreak || 1);
+      verifiedBestStreak = Math.max(verifiedBestStreak || 0, verifiedStreak);
+      verifiedLastStreakDate = new Date().toLocaleDateString('en-CA');
+    }
+
     const rpcRes = await rpcCompleteChallenge(sessId, cookiesEarned, effectiveXp, email);
 
     await recordUserDailyActivity({
@@ -664,14 +769,33 @@ class ProgressService {
       userId: current.id
     });
 
+    await this.updateProfileData({
+      gems: rpcRes.new_balance ?? rpcRes.gems ?? rpcRes.newBalance,
+      ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
+      ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {}),
+      streak: verifiedStreak,
+      best_streak: verifiedBestStreak,
+      last_streak_date: verifiedLastStreakDate
+    });
+
     if (rpcRes.weekly_xp !== undefined || rpcRes.xp !== undefined) {
       this.updateProfileLocally({
         ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: rpcRes.weekly_xp } : {}),
-        ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {})
+        ...(rpcRes.xp !== undefined ? { xp: rpcRes.xp } : {}),
+        streak: verifiedStreak,
+        best_streak: verifiedBestStreak,
+        last_streak_date: verifiedLastStreakDate
       });
     }
 
-    return this.initProfile(email, true);
+    const reloaded = await this.initProfile(email, true);
+    return this.updateProfileLocally({
+      ...(rpcRes.weekly_xp !== undefined ? { weekly_xp: Math.max(reloaded.weekly_xp || 0, rpcRes.weekly_xp) } : {}),
+      ...(rpcRes.xp !== undefined ? { xp: Math.max(reloaded.xp || 0, rpcRes.xp) } : {}),
+      streak: verifiedStreak,
+      best_streak: verifiedBestStreak,
+      last_streak_date: verifiedLastStreakDate
+    });
   }
 
   /**

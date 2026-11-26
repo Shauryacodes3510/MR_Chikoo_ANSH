@@ -824,6 +824,32 @@ async function getProfileNoCache(email: string, knownAuthUserId?: string | null)
             : (typeof localStorage !== 'undefined' && localStorage.getItem(`chikoo_welcome_video_seen_${cleanEmail}`) === 'true')
         };
 
+        // Hydrate claimed_rewards from public.reward_claims and local storage
+        try {
+          const profileClaimed: string[] = Array.isArray(rowData.claimed_rewards) ? [...rowData.claimed_rewards] : [];
+          const profId = loadedProfile.id || cleanEmail;
+          let storedKeys: string[] = [];
+          if (typeof localStorage !== 'undefined' && profId) {
+            try {
+              const raw = localStorage.getItem(`CHIKOO_CLAIMED_QUEST_KEYS_${profId}`);
+              if (raw) storedKeys = JSON.parse(raw);
+            } catch (_) {}
+          }
+          let serverClaims: string[] = [];
+          if (loadedProfile.id) {
+            try {
+              const { data: claimsData } = await supabase
+                .from('reward_claims')
+                .select('claim_key')
+                .eq('user_id', loadedProfile.id);
+              if (claimsData && Array.isArray(claimsData)) {
+                serverClaims = claimsData.map((c: any) => c.claim_key).filter(Boolean);
+              }
+            } catch (_) {}
+          }
+          loadedProfile.claimed_rewards = Array.from(new Set([...profileClaimed, ...storedKeys, ...serverClaims]));
+        } catch (_) {}
+
         const duration = Date.now() - startTime;
         console.log(`[DATA_INIT] query: getProfile completed`);
         console.log(`[DATA_INIT] duration: ${duration}ms`);
