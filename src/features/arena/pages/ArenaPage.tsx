@@ -151,7 +151,7 @@ export default function ArenaPage({ onBack }: { onBack?: () => void }) {
     setPhase('battle');
   };
 
-    const handleBattleFinished = (result: ArenaResult) => {
+  const handleBattleFinished = async (result: ArenaResult) => {
     setBattleResult(result);
     setPhase('finished');
 
@@ -174,7 +174,21 @@ export default function ArenaPage({ onBack }: { onBack?: () => void }) {
         // Direct client updates for trophies/xp/gems are blocked by live DB triggers (Task P7).
         // Record battle session via verified RPC:
         if (result.cookiesEarned > 0) {
-          progressService.recordPracticeSession(result.cookiesEarned, `arena_${Date.now()}`);
+          try {
+            const updatedProfile = await progressService.recordPracticeSession(result.cookiesEarned, `arena_${Date.now()}`);
+            if (updatedProfile) {
+              progressService.updateProfileLocally({
+                ...(typeof updatedProfile.xp === 'number' ? { xp: updatedProfile.xp } : {}),
+                ...(typeof updatedProfile.weekly_xp === 'number' ? { weekly_xp: updatedProfile.weekly_xp } : {}),
+                ...(typeof updatedProfile.gems === 'number' ? { gems: updatedProfile.gems } : {})
+              });
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('chikooProfileUpdated', { detail: updatedProfile }));
+              }
+            }
+          } catch (sessionErr) {
+            console.warn('Failed recording practice session:', sessionErr);
+          }
         }
       } else {
         saveBattleStats({

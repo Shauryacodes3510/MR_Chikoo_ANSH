@@ -1,4 +1,5 @@
 import { progressService } from './progressService';
+import { getISTDateString } from './questConfig';
 import { SupabaseUserProfile, supabase } from './supabase';
 import { 
   rpcCompleteChallenge, 
@@ -46,6 +47,7 @@ export interface GrantRewardResult {
   xp?: number;
   weekly_xp?: number;
   gems?: number;
+  reason?: string;
 }
 
 export type RewardEventListener = (result: GrantRewardResult) => void;
@@ -177,7 +179,8 @@ class RewardService {
           message: res.message,
           xp: (res as any).xp,
           weekly_xp: (res as any).weekly_xp,
-          gems: (res as any).gems ?? res.newBalance
+          gems: (res as any).gems ?? res.newBalance,
+          reason: (res as any).reason
         };
         if (res.granted) {
           this.notifyListeners(result);
@@ -217,7 +220,7 @@ class RewardService {
    * Claim Daily Chest reward (cooldown based, 50 Cookies).
    */
   async claimDailyChest(amount: number = 50): Promise<GrantRewardResult> {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = getISTDateString(); // resets at IST midnight
     const claimId = `daily_chest_${todayStr}`;
 
     const result = await this.grantReward({
@@ -257,14 +260,16 @@ class RewardService {
   }
 
   /**
-   * Claim a Quest or Task reward permanently.
+   * Claim a quest reward. `questId` should already be period-stamped
+   * (see periodicClaimKey in questConfig) so daily/weekly quests can be claimed again next period.
    */
-  async claimQuest(questId: string, amount: number): Promise<GrantRewardResult> {
+  async claimQuest(questId: string, amount: number, xpReward: number = 0): Promise<GrantRewardResult> {
     const claimId = `quest_${questId}`;
     return this.grantReward({
       claimId,
       amount,
       rewardType: 'quest',
+      xpReward,
       metadata: { questId }
     });
   }

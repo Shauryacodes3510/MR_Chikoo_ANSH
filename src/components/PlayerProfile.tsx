@@ -49,6 +49,7 @@ interface PlayerProfileProps {
   schoolInfo?: { id: string; name: string; school_code: string; status: 'active' | 'inactive' } | null;
   onOpenSchoolAdmin?: () => void;
   isSchoolInactive?: boolean;
+  onGrantBadgeXp?: (badgeId: string) => Promise<void>;
 }
 
 export default function PlayerProfile({
@@ -86,6 +87,7 @@ export default function PlayerProfile({
   schoolInfo,
   onOpenSchoolAdmin,
   isSchoolInactive: _isSchoolInactive,
+  onGrantBadgeXp,
 }: PlayerProfileProps) {
   const { t } = useTranslation();
 
@@ -241,9 +243,9 @@ export default function PlayerProfile({
       setEarnedBadges(nextBadges);
       saveProfileUpdates({ earned_badges: nextBadges });
     }
-    const nextXp = xp + 100;
-    setXp(nextXp);
-    saveProfileUpdates({ xp: nextXp });
+    if (onGrantBadgeXp) {
+      onGrantBadgeXp(badge.id);
+    }
     setSelectedBadge(null);
   };
 

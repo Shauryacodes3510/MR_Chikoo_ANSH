@@ -103,6 +103,7 @@ interface LessonSessionProps {
   onStreakRestore?: (amount: number, streak: number) => void;
   onQuestionAnswered?: (isCorrect: boolean) => void;
   onRefillEnergy?: () => void;
+  skipHeartCheck?: boolean; // free replay / practice / recharge: never block on hearts
   energy?: number;
   nextEnergyIn?: number | null;
 }
@@ -218,6 +219,7 @@ export default function LessonSession({
   onStreakRestore, 
   onQuestionAnswered,
   onRefillEnergy,
+  skipHeartCheck = false,
   energy = 25,
   nextEnergyIn = null
 }: LessonSessionProps) {
@@ -596,7 +598,7 @@ export default function LessonSession({
     if (isChecked || !currentChallenge) return;
     
     // Out of hearts check: if hearts/energy are depleted on an interactive question, block & prompt refill
-    if (energy <= 0 && !isReadingChallenge(currentChallenge)) {
+    if (!skipHeartCheck && energy <= 0 && !isReadingChallenge(currentChallenge)) {
       soundManager.play('incorrect');
       onRefillEnergy?.();
       return;
@@ -901,7 +903,7 @@ export default function LessonSession({
       setFeedback('incorrect');
       soundManager.play('incorrect');
     }
-  }, [isChecked, currentChallenge, selectedOption, sessionStreak, onStreakRestore, onQuestionAnswered, attempts, currentIndex, energy, onRefillEnergy]);
+  }, [isChecked, currentChallenge, selectedOption, sessionStreak, onStreakRestore, onQuestionAnswered, attempts, currentIndex, energy, onRefillEnergy, skipHeartCheck]);
 
   const handleSelect = useCallback((option: any) => {
     if (isChecked) return;
@@ -1923,34 +1925,28 @@ export default function LessonSession({
               {/* Only show default question header if NOT on a reading / storytelling content screen */}
               {!isReadingChallenge(currentChallenge) && (
                 <div className="w-full max-w-xl mx-auto flex flex-row items-center justify-start gap-3 sm:gap-4 mb-5 select-none text-left">
-                  {/* Left Side Playful Chikoo Mascot (Dynamic Expressions & Lip-Sync) */}
+                  {/* Left Side Playful Chikoo Mascot (Mini Transparent Mascot) */}
                   <motion.div 
                     initial={{ scale: 0.8, x: -12, opacity: 0 }}
                     animate={{ 
                       scale: feedback === 'correct' ? [1, 1.15, 1] : feedback === 'incorrect' ? [1, 0.92, 1] : 1, 
                       x: feedback === 'incorrect' ? [0, -6, 6, -4, 4, 0] : 0, 
                       opacity: 1, 
-                      y: screenAudio.isPlaying ? [0, -8, 0] : [0, -6, 0] 
+                      y: [0, -6, 0] 
                     }}
                     transition={{ 
-                      scale: { type: "spring", stiffness: 360, damping: 18 },
-                      y: { duration: screenAudio.isPlaying ? 1.2 : 3, repeat: Infinity, ease: "easeInOut" }
+                      scale: feedback
+                        ? { duration: 0.4, ease: "easeInOut" }
+                        : { type: "spring", stiffness: 360, damping: 18 },
+                      x: { duration: 0.4, ease: "easeInOut" },
+                      y: { duration: 3, repeat: Infinity, ease: "easeInOut" }
                     }}
                     className="w-32 h-32 sm:w-40 sm:h-40 shrink-0 relative flex items-center justify-center filter drop-shadow-md"
                   >
                     <img 
-                      key={feedback || (screenAudio.isPlaying ? 'talking' : 'idle')}
-                      src={
-                        feedback === 'correct'
-                          ? '/mascot/wink.webp'
-                          : feedback === 'incorrect'
-                          ? '/mascot/shock.webp'
-                          : screenAudio.isPlaying
-                          ? '/mascot/talk1.webp'
-                          : '/mascot/still.webp'
-                      } 
+                      src="/heading_aibo.webp" 
                       alt="Chikoo Mascot" 
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/mascot/still.webp'; }}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/avatar.webp'; }}
                       className="w-full h-full object-contain pointer-events-none select-none transition-transform duration-150"
                       referrerPolicy="no-referrer"
                     />

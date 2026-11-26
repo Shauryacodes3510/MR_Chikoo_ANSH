@@ -14,6 +14,8 @@ export interface CompleteChallengeRpcResult {
   xp?: number;
   gems?: number;
   new_balance?: number;
+  /** Server refusal reason, e.g. 'daily_cap_reached', 'daily_limit_for_type', 'unknown_claim'. */
+  reason?: string;
 }
 
 export interface ClaimSpinRewardRpcResult {
@@ -330,6 +332,8 @@ export async function rpcCompleteChallenge(
   let confirmedGems: number = currentGems;
   let rpcSucceeded = false;
   let alreadyCompletedOnServer = false;
+  let serverReason: string | undefined;
+  let serverDuplicate = false;
 
   if (isSupabaseConfigured && supabase) {
     try {
@@ -370,6 +374,8 @@ export async function rpcCompleteChallenge(
         // Check if server indicated duplicate
         if (typeof resData === 'object' && (resData.already_completed || resData.already_claimed || resData.granted === false)) {
           alreadyCompletedOnServer = true;
+          serverReason = typeof resData.reason === 'string' ? resData.reason : undefined;
+          serverDuplicate = !!(resData.already_completed || resData.already_claimed);
           confirmedBalance = Number(resData.new_balance ?? resData.gems ?? currentGems);
           confirmedGems = resData.gems !== undefined ? Number(resData.gems) : confirmedBalance;
           if (resData.weekly_xp !== undefined) confirmedWeeklyXp = Number(resData.weekly_xp);
@@ -406,7 +412,9 @@ export async function rpcCompleteChallenge(
     return {
       success: false,
       granted: false,
-      alreadyClaimed: true,
+      // A refusal with a reason (daily cap, unknown claim...) is NOT a duplicate claim.
+      alreadyClaimed: serverDuplicate || !serverReason,
+      reason: serverReason,
       amount: 0,
       newBalance: confirmedBalance,
       new_balance: confirmedBalance,
@@ -414,7 +422,9 @@ export async function rpcCompleteChallenge(
       xp: confirmedXp,
       weekly_xp: confirmedWeeklyXp,
       challengeId: cleanId,
-      message: `Challenge '${cleanId}' was already completed on server.`
+      message: serverReason
+        ? `Challenge '${cleanId}' was refused by server: ${serverReason}.`
+        : `Challenge '${cleanId}' was already completed on server.`
     };
   }
 

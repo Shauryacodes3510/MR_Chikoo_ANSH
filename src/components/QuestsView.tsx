@@ -1,35 +1,49 @@
-import { useState, useEffect, useMemo, memo } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Target, CheckCircle2, Cookie, Zap, Trophy, Flame, MousePointer2, Sparkles, X, ArrowLeft, Lock } from 'lucide-react';
+import { Target, CheckCircle2, Cookie, Zap, Trophy, Flame, MousePointer2, Sparkles, X, Swords, Gift, BookOpen, Clock } from 'lucide-react';
 import ChestIcon from './ui/ChestIcon';
 import { soundManager } from '../lib/sounds';
 import { useTranslation } from '../lib/translation/TranslationContext';
 import cookiesIcon from '@/cookies.webp';
 import CookieWheel from './CookieWheel';
-import AIMissions from './AIMissions';
 import { rewardService, generateSpinReference } from '../lib/rewardService';
 import { progressService } from '../lib/progressService';
-
-interface Quest {
-  id: string;
-  title: string;
-  description: string;
-  target: number;
-  current: number;
-  rewardGems: number;
-  icon: any;
-  color: string;
-}
+import {
+  fetchUserDailyActivityRecords,
+  recordUserDailyActivity,
+  subscribeToUserDailyActivity,
+  UserDailyActivityRecord
+} from '../lib/userDailyActivityService';
+import {
+  DAILY_QUESTS,
+  DAILY_BONUS_QUEST,
+  WEEKLY_QUESTS,
+  QuestDefinition,
+  QuestIconKey,
+  QuestPeriod,
+  getISTDateString,
+  getISTWeekStart,
+  isSameISTDay,
+  msUntilISTMidnight,
+  msUntilISTWeekEnd,
+  formatCountdown,
+  periodicClaimKey
+} from '../lib/questConfig';
 
 // Spin wheel rewards only award cookies and strictly do NOT increment weekly XP
 export const SPIN_XP = 0;
 
+const ICONS: Record<QuestIconKey, any> = {
+  lesson: BookOpen,
+  lessons: Target,
+  practice: Swords,
+  challenge: Zap,
+  xp: Cookie,
+  streak: Flame,
+  bonus: Gift
+};
+
 interface QuestsViewProps {
-  gems: number;
-  streak: number;
-  completedCount: number;
-  accuracy: number;
-  bestAnswerStreak: number;
   lastChestClaimedAt: string | null;
   onClaimGems: (amount: number, newBalance?: number) => void;
   onClaimChest?: () => Promise<any>;
@@ -37,140 +51,180 @@ interface QuestsViewProps {
   onNavigateTab?: (tab: string) => void;
 }
 
-function QuestsView({ 
-  gems, 
-  streak, 
-  completedCount, 
-  accuracy, 
-  bestAnswerStreak,
+function QuestsView({
   lastChestClaimedAt,
   onClaimGems,
   onClaimChest,
   onQuestDetailsToggle,
   onNavigateTab
- }: QuestsViewProps) {
+}: QuestsViewProps) {
   const { t } = useTranslation();
-  const [timeLeft, setTimeLeft] = useState<string>('');
   const [showCookieWheel, setShowCookieWheel] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<Quest | null>(null);
-  const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([]);
+  const [tab, setTab] = useState<QuestPeriod>('daily');
+  const [rows, setRows] = useState<UserDailyActivityRecord[]>([]);
+  const [claimedKeys, setClaimedKeys] = useState<string[]>([]);
+  const [claimingKey, setClaimingKey] = useState<string | null>(null);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const [now, setNow] = useState<number>(Date.now());
 
-  // Sync completed task / quest ids from progress profile
+  // This view has no full-screen detail page anymore; keep parent flag cleared.
   useEffect(() => {
-    const profile = progressService.getProfile();
-    if (profile?.completed_daily_challenges) {
-      setCompletedTaskIds(prev => Array.from(new Set([...prev, ...profile.completed_daily_challenges!])));
-    }
-    const unsub = progressService.subscribe((p) => {
-      if (p.completed_daily_challenges) {
-        setCompletedTaskIds(prev => Array.from(new Set([...prev, ...p.completed_daily_challenges!])));
-      }
-    });
-    return () => unsub();
+    onQuestDetailsToggle?.(false);
+  }, [onQuestDetailsToggle]);
+
+  // Ticking clock drives both the countdowns and the midnight rollover (todayKey/weekKey change).
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
   }, []);
 
-  // Notify parent component when full-screen Task Mission page opens or closes
+  const todayKey = getISTDateString(new Date(now));
+  const weekKey = getISTWeekStart(new Date(now));
+
+  const loadRows = useCallback(async () => {
+    const userId = progressService.getProfile()?.id;
+    const data = await fetchUserDailyActivityRecords(userId, 8);
+    setRows(data);
+  }, []);
+
+  // Refetch on mount, whenever the IST day changes, on rewards, and on realtime activity updates.
+  useEffect(() => { loadRows(); }, [loadRows, todayKey]);
+
   useEffect(() => {
-    if (onQuestDetailsToggle) {
-      onQuestDetailsToggle(!!selectedTask);
-    }
+    const onReward = () => { loadRows(); };
+    window.addEventListener('chikooRewardGranted', onReward);
+    const userId = progressService.getProfile()?.id;
+    const unsub = userId ? subscribeToUserDailyActivity(userId, () => { loadRows(); }) : null;
     return () => {
-      if (onQuestDetailsToggle) {
-        onQuestDetailsToggle(false);
-      }
+      window.removeEventListener('chikooRewardGranted', onReward);
+      unsub?.();
     };
-  }, [selectedTask, onQuestDetailsToggle]);
+  }, [loadRows]);
 
-  const claimCooldownMs = 24 * 60 * 60 * 1000; // 24 hours
+  const todayRows = useMemo(() => rows.filter(r => String(r.activity_date).slice(0, 10) === todayKey), [rows, todayKey]);
+  const weekRows = useMemo(() => rows.filter(r => String(r.activity_date).slice(0, 10) >= weekKey), [rows, weekKey]);
 
-  const isClaimed = useMemo(() => {
-    if (!lastChestClaimedAt) return false;
-    const claimTime = new Date(lastChestClaimedAt).getTime();
-    return (Date.now() - claimTime) < claimCooldownMs;
-  }, [lastChestClaimedAt]);
+  const isKeyClaimed = (key: string) =>
+    claimedKeys.includes(key) || rewardService.isClaimed(`quest_${key}`);
 
-  useEffect(() => {
-    if (!lastChestClaimedAt) {
-      setTimeLeft('');
-      return;
-    }
+  // Daily chest now resets at IST midnight (same as spin wheel & quests).
+  const isChestClaimed = isSameISTDay(lastChestClaimedAt, new Date(now));
+  const chestTimeLeft = formatCountdown(msUntilISTMidnight(now));
+  const periodTimeLeft = formatCountdown(tab === 'daily' ? msUntilISTMidnight(now) : msUntilISTWeekEnd(now));
 
-    const updateTimer = () => {
-      const claimTime = new Date(lastChestClaimedAt).getTime();
-      const targetTime = claimTime + claimCooldownMs;
-      const difference = targetTime - Date.now();
-
-      if (difference <= 0) {
-        setTimeLeft('');
+  const claim = async (q: Omit<QuestDefinition, 'progress'>) => {
+    const key = periodicClaimKey(q, new Date(now));
+    if (claimingKey || isKeyClaimed(key)) return;
+    setClaimingKey(key);
+    try {
+      const res = await rewardService.claimQuest(key, q.rewardCookies, q.rewardXp);
+      if (res.granted) {
+        soundManager.play('complete');
+        onClaimGems(q.rewardCookies, res.newBalance);
+        setClaimedKeys(prev => [...prev, key]);
+        const xpUpdates: any = {};
+        if (res.xp !== undefined) xpUpdates.xp = res.xp;
+        if (res.weekly_xp !== undefined) xpUpdates.weekly_xp = res.weekly_xp;
+        if (Object.keys(xpUpdates).length) progressService.updateProfileLocally(xpUpdates);
+        try { await recordUserDailyActivity({ questsDelta: 1, userId: progressService.getProfile()?.id }); } catch (_) {}
+      } else if (res.alreadyClaimed) {
+        setClaimedKeys(prev => [...prev, key]);
       } else {
-        const hours = Math.floor(difference / (1000 * 60 * 60));
-        const minutes = Math.floor((difference / (1000 * 60)) % 60);
-        const seconds = Math.floor((difference / 1000) % 60);
-
-        const hStr = hours > 0 ? `${hours}h ` : '';
-        const mStr = `${minutes}m `.padStart(4, '0');
-        const sStr = `${seconds}s`.padStart(3, '0');
-
-        setTimeLeft(`${hStr}${mStr}${sStr}`);
+        const msgs: Record<string, string> = {
+          daily_cap_reached: "Daily cookie limit reached. Try again after midnight.",
+          daily_limit_for_type: "Daily quest claim limit reached. Try again tomorrow.",
+          unknown_claim: "This quest can't be claimed right now."
+        };
+        setClaimError(msgs[res.reason || ''] || "Couldn't claim this reward. Please try again.");
+        setTimeout(() => setClaimError(null), 4000);
       }
-    };
-
-    updateTimer(); // Initial call
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [lastChestClaimedAt]);
-  const quests: Quest[] = [
-    {
-      id: 'q1',
-      title: 'AI Novice',
-      description: 'Complete 3 lessons',
-      target: 3,
-      current: completedCount,
-      rewardGems: 50,
-      icon: Target,
-      color: 'bg-chikoo-blue-500'
-    },
-    {
-      id: 'q2',
-      title: 'Cookie Enthusiast',
-      description: 'Earn 250 Cookies total',
-      target: 250,
-      current: gems,
-      rewardGems: 100,
-      icon: Cookie,
-      color: 'bg-amber-500'
-    },
-    {
-      id: 'q3',
-      title: 'Consistency King',
-      description: 'Maintain a 3-day streak',
-      target: 3,
-      current: streak,
-      rewardGems: 75,
-      icon: Flame,
-      color: 'bg-chikoo-red-500'
-    },
-    {
-      id: 'q4',
-      title: 'Sharp Mind',
-      description: 'Keep accuracy above 90%',
-      target: 90,
-      current: Math.round(accuracy * 100),
-      rewardGems: 60,
-      icon: Zap,
-      color: 'bg-duo-green'
-    },
-    {
-      id: 'q5',
-      title: 'Focus Master',
-      description: 'Get a 10-answer streak',
-      target: 10,
-      current: bestAnswerStreak,
-      rewardGems: 80,
-      icon: MousePointer2,
-      color: 'bg-purple-500'
+    } finally {
+      setClaimingKey(null);
     }
-  ];
+  };
+
+  const dailyClaimedCount = DAILY_QUESTS.filter(q => isKeyClaimed(periodicClaimKey(q, new Date(now)))).length;
+  const bonusQuest = { ...DAILY_BONUS_QUEST };
+
+  const renderQuest = (q: Omit<QuestDefinition, 'progress'>, current: number, idx: number) => {
+    const key = periodicClaimKey(q, new Date(now));
+    const claimed = isKeyClaimed(key);
+    const current_ = Math.min(current, q.target);
+    const ready = current >= q.target && !claimed;
+    const pct = Math.min(100, (current_ / q.target) * 100);
+    const Icon = ICONS[q.icon];
+
+    return (
+      <motion.div
+        layout
+        key={key}
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: idx * 0.06 }}
+        className={`relative overflow-hidden glass-panel p-5 flex flex-col gap-3.5 border border-white/60 dark:border-[rgba(226,232,240,0.14)] dark:bg-[#172033]/90 ${
+          claimed ? 'border-[#10b981]/30 bg-emerald-50/10 dark:bg-emerald-950/20' : ready ? 'border-amber-400/40 bg-amber-50/10 dark:bg-amber-950/20' : ''
+        }`}
+      >
+        <div className="flex justify-between items-start gap-3">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm text-white ${
+              claimed ? 'bg-[#10b981]' : ready ? 'bg-amber-500 animate-pulse' : q.color
+            }`}>
+              {claimed ? <CheckCircle2 size={24} /> : Icon === Cookie
+                ? <img src={cookiesIcon} alt="XP" className="w-6 h-6 object-contain" />
+                : <Icon size={24} />}
+            </div>
+            <div className="min-w-0 text-left">
+              <h4 className="font-bold text-base text-slate-900 dark:text-white leading-tight truncate">{q.title}</h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">{q.description}</p>
+            </div>
+          </div>
+          <div className="text-right shrink-0 space-y-1">
+            <div className="flex items-center gap-1.5 justify-end">
+              <img src={cookiesIcon} alt="Cookies" className="w-4 h-4 object-contain" />
+              <p className="text-base font-bold text-amber-600 dark:text-amber-400 font-mono leading-none">+{q.rewardCookies}</p>
+            </div>
+            <p className="text-[11px] font-bold text-indigo-500 dark:text-indigo-300 font-mono leading-none">+{q.rewardXp} XP</p>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex justify-between items-center px-0.5">
+            <span className={`text-xs font-semibold ${claimed ? 'text-[#10b981]' : ready ? 'text-amber-600 dark:text-amber-400' : 'text-slate-600 dark:text-slate-300'}`}>
+              {current_} / {q.target}
+            </span>
+            {claimed && <span className="text-xs font-semibold text-[#10b981]">Claimed ✓</span>}
+          </div>
+          <div className="h-2.5 w-full bg-slate-200/50 dark:bg-slate-800 rounded-full overflow-hidden p-0.5">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${pct}%` }}
+              transition={{ type: 'spring', stiffness: 50, damping: 15 }}
+              className={`h-full rounded-full ${claimed ? 'bg-[#10b981]' : ready ? 'bg-amber-500' : q.color}`}
+            />
+          </div>
+        </div>
+
+        {ready && (
+          <button
+            disabled={claimingKey === key}
+            onClick={() => claim(q)}
+            className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black py-3 rounded-2xl text-sm uppercase tracking-wider shadow-[0_4px_0_#047857] active:translate-y-1 active:shadow-none transition-all cursor-pointer disabled:opacity-60"
+          >
+            Claim +{q.rewardCookies} 🍪 +{q.rewardXp} XP
+          </button>
+        )}
+        {!ready && !claimed && onNavigateTab && (
+          <button
+            onClick={() => { soundManager.play('click'); onNavigateTab(q.icon === 'practice' ? 'practice' : 'learn'); }}
+            className="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 underline text-left cursor-pointer"
+          >
+            {q.icon === 'practice' ? 'Go to Practice Arena →' : 'Go to Lessons →'}
+          </button>
+        )}
+      </motion.div>
+    );
+  };
 
   return (
     <motion.div 
@@ -188,23 +242,23 @@ function QuestsView({
         <div className="relative z-10 flex flex-col items-center text-center gap-4">
           <motion.div
             animate={{ 
-              rotate: isClaimed ? 0 : [0, -5, 5, -5, 0],
-              scale: isClaimed ? 1 : [1, 1.1, 1]
+              rotate: isChestClaimed ? 0 : [0, -5, 5, -5, 0],
+              scale: isChestClaimed ? 1 : [1, 1.1, 1]
             }}
-            transition={{ repeat: isClaimed ? 0 : Infinity, duration: 4 }}
+            transition={{ repeat: isChestClaimed ? 0 : Infinity, duration: 4 }}
           >
-            <ChestIcon isCurrent={!isClaimed} isOpen={isClaimed} className="w-24 h-24 mb-2 drop-shadow-2xl" />
+            <ChestIcon isCurrent={!isChestClaimed} isOpen={isChestClaimed} className="w-24 h-24 mb-2 drop-shadow-2xl" />
           </motion.div>
           <div>
             <h2 className="text-2xl font-display font-black leading-tight">{t('quests.daily_chest', 'Daily Mystery Chest')}</h2>
             <p className="text-amber-100/80 text-sm font-medium">
-              {isClaimed ? t('quests.come_back_tomorrow', 'Come back tomorrow for a new chest') : t('quests.chest_reward_desc', 'Open your daily cosmic chest for surprise Cookies and XP!')}
+              {isChestClaimed ? t('quests.come_back_tomorrow', 'Come back tomorrow for a new chest') : t('quests.chest_reward_desc', 'Open your daily cosmic chest for surprise Cookies and XP!')}
             </p>
           </div>
           <button 
-            disabled={isClaimed}
+            disabled={isChestClaimed}
             onClick={async () => {
-              if (!isClaimed) {
+              if (!isChestClaimed) {
                 if (onClaimChest) {
                   await onClaimChest();
                 } else {
@@ -217,15 +271,15 @@ function QuestsView({
               }
             }}
             className={`px-8 py-3.5 rounded-2xl font-display font-black text-base uppercase tracking-wider transition-all w-full select-none ${
-              isClaimed 
+              isChestClaimed 
                 ? 'bg-amber-800/40 text-amber-400 cursor-not-allowed border-2 border-amber-900/45' 
                 : 'bg-white dark:bg-[#243149] text-amber-700 dark:text-amber-300 shadow-[0_4px_0_#d1d5db] dark:shadow-[0_4px_0_#172033] active:translate-y-1 active:shadow-none'
             }`}
           >
-            {isClaimed ? (
+            {isChestClaimed ? (
               <div className="flex flex-col items-center justify-center leading-tight">
-                <span className="text-[10px] uppercase tracking-widest text-amber-400 font-semibold mb-0.5">Next Chest In</span>
-                <span className="text-lg font-black font-mono text-white tracking-widest">{timeLeft || '24h 00m 00s'}</span>
+                <span className="text-[10px] uppercase tracking-widest text-amber-400 font-semibold mb-0.5">Resets At Midnight In</span>
+                <span className="text-lg font-black font-mono text-white tracking-widest">{chestTimeLeft}</span>
               </div>
             ) : (
               `${t('common.claim', 'Claim')} 50 ${t('header.cookies', 'Cookies')}`
@@ -352,256 +406,59 @@ function QuestsView({
         )}
       </AnimatePresence>
 
-      <div className="text-left">
-        <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-snug">
-          Complete Challenges every day earn bonus cookie
-        </h3>
-      </div>
-
+      {/* DAILY / WEEKLY QUEST SECTIONS */}
       <div className="space-y-4">
-        {quests.map((quest, idx) => {
-          const isClaimed = completedTaskIds.includes(quest.id) || rewardService.isClaimed('quest_' + quest.id);
-          const isReadyToClaim = quest.current >= quest.target && !isClaimed;
-          const isCompleted = isClaimed || isReadyToClaim;
-          const progress = Math.min(100, (quest.current / quest.target) * 100);
-          const Icon = quest.icon;
-
-          return (
-            <motion.div 
-              layout
-              key={`quest-item-${quest.id || 'quest'}-${idx}`} 
-              onClick={() => {
-                soundManager.play('click');
-                setSelectedTask(quest);
-              }}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ 
-                opacity: 1, 
-                x: 0,
-                scale: isCompleted ? [1, 1.01, 1] : 1,
-                boxShadow: isCompleted ? '0 12px 24px -5px rgba(16, 185, 129, 0.12)' : '0 4px 12px -1px rgba(148, 163, 184, 0.05)'
-              }}
-              transition={{ 
-                delay: idx * 0.08,
-                scale: { duration: 0.4, ease: "easeOut" }
-              }}
-              className={`relative overflow-hidden glass-panel glass-panel-hover p-5 sm:p-6 flex flex-col gap-3.5 border border-white/60 dark:border-[rgba(226,232,240,0.14)] dark:bg-[#172033]/90 transition-all duration-300 cursor-pointer ${
-                isClaimed ? 'border-[#10b981]/30 bg-emerald-50/10 dark:bg-emerald-950/20' : isReadyToClaim ? 'border-amber-400/40 bg-amber-50/10 dark:bg-amber-950/20' : ''
+        <div className="flex p-1 rounded-2xl bg-slate-200/60 dark:bg-slate-800/80 gap-1">
+          {(['daily', 'weekly'] as QuestPeriod[]).map(p => (
+            <button
+              key={p}
+              onClick={() => { soundManager.play('click'); setTab(p); }}
+              className={`flex-1 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider transition-all cursor-pointer ${
+                tab === p
+                  ? 'bg-white dark:bg-[#243149] text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              {isClaimed && (
-                <motion.div 
-                  initial={{ opacity: 0, y: -10, scale: 0.5 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 20, delay: 0.1 + idx * 0.08 }}
-                  className="absolute top-0 right-0 w-16 h-16 pointer-events-none overflow-hidden animate-in fade-in"
-                >
-                  <div className="absolute top-[-10px] right-[-30px] w-[80px] h-[30px] bg-[#10b981] rotate-45 flex items-center justify-center shadow-sm">
-                    <CheckCircle2 size={11} className="text-white" />
-                  </div>
-                </motion.div>
-              )}
+              {p === 'daily' ? 'Daily' : 'Weekly'}
+            </button>
+          ))}
+        </div>
 
-              <div className="flex justify-between items-start gap-3">
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm border border-white/40 dark:border-white/10 ${
-                    isClaimed ? 'bg-[#10b981] text-white' : isReadyToClaim ? 'bg-amber-500 text-white animate-pulse' : `${quest.color} text-white`
-                  }`}>
-                    {Icon === Cookie ? (
-                      <img src={cookiesIcon} alt="Cookies" className={`w-6 h-6 object-contain shrink-0 ${isCompleted ? 'animate-bounce' : ''}`} />
-                    ) : (
-                      <Icon size={24} className={isCompleted ? 'animate-bounce' : ''} />
-                    )}
-                  </div>
-                  <div className="min-w-0 text-left">
-                    <h4 className="font-bold text-base text-slate-900 dark:text-white leading-tight truncate">{quest.title}</h4>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 font-normal mt-0.5 leading-snug">{quest.description}</p>
-                  </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <img src={cookiesIcon} alt="Cookies" className="w-4 h-4 object-contain shrink-0" />
-                    <p className="text-base font-bold text-amber-600 dark:text-amber-400 font-mono leading-none">+{quest.rewardGems}</p>
-                  </div>
-                  <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 mt-1 leading-none">Reward</p>
-                </div>
-              </div>
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+            {tab === 'daily' ? "Today's Quests" : "This Week's Quests"}
+          </h3>
+          <span className="inline-flex items-center gap-1.5 text-xs font-bold font-mono text-slate-500 dark:text-slate-400">
+            <Clock size={13} /> {periodTimeLeft}
+          </span>
+        </div>
 
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center px-0.5">
-                  <span className={`text-xs font-semibold ${isClaimed ? 'text-[#10b981]' : isReadyToClaim ? 'text-amber-600 dark:text-amber-400' : 'text-slate-600 dark:text-slate-300'}`}>
-                    {quest.current} / {quest.target}
-                  </span>
-                  {isClaimed ? (
-                    <span className="text-xs font-semibold text-[#10b981]">
-                      Completed ✓
-                    </span>
-                  ) : isReadyToClaim ? (
-                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400 animate-pulse">
-                      Ready to Claim!
-                    </span>
-                  ) : null}
-                </div>
-                <div className="h-2.5 w-full bg-slate-200/50 dark:bg-slate-800 rounded-full border border-white/40 dark:border-slate-700/60 overflow-hidden p-0.5">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progress}%` }}
-                    transition={{ type: "spring", stiffness: 50, damping: 15 }}
-                    className={`h-full rounded-full shadow-inner ${
-                      isClaimed ? 'bg-[#10b981]' : isReadyToClaim ? 'bg-amber-500' : quest.color
-                    }`}
-                  />
-                </div>
-              </div>
-            </motion.div>
-          );
-        })}
+        {claimError && (
+          <div className="px-4 py-3 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs font-semibold">
+            {claimError}
+          </div>
+        )}
+
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={tab}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.15 }}
+            className="space-y-4"
+          >
+            {tab === 'daily' ? (
+              <>
+                {DAILY_QUESTS.map((q, i) => renderQuest(q, q.progress(todayRows), i))}
+                {renderQuest(bonusQuest, dailyClaimedCount, DAILY_QUESTS.length)}
+              </>
+            ) : (
+              WEEKLY_QUESTS.map((q, i) => renderQuest(q, q.progress(weekRows), i))
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
-
-      {/* ULTRA-MINIMAL DUOLINGO-STYLE MISSION PAGE */}
-      <AnimatePresence>
-        {selectedTask && (() => {
-          const isClaimed = completedTaskIds.includes(selectedTask.id) || rewardService.isClaimed('quest_' + selectedTask.id);
-          const isRequirementMet = selectedTask.current >= selectedTask.target;
-          const progressPercent = Math.min(100, Math.round((selectedTask.current / selectedTask.target) * 100));
-
-          return (
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 30 }}
-              transition={{ type: "spring", stiffness: 350, damping: 30 }}
-              className="fixed inset-0 z-[999999] bg-slate-50 dark:bg-[#0b0f19] text-slate-900 dark:text-white flex flex-col justify-between items-center font-sans select-none overflow-y-auto pt-4 pb-5 px-4 sm:px-6"
-            >
-              {/* ---------------- TOP NAVIGATION BAR ---------------- */}
-              <div className="w-full max-w-md flex items-center justify-between shrink-0 py-2.5 z-10">
-                <button
-                  onClick={() => {
-                    soundManager.play('click');
-                    setSelectedTask(null);
-                  }}
-                  className="w-11 h-11 rounded-full bg-white dark:bg-[#172033] border border-slate-200/80 dark:border-slate-700/70 shadow-xs flex items-center justify-center text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#243149] transition-all active:scale-95 cursor-pointer"
-                  title="Back to Quests"
-                >
-                  <ArrowLeft size={22} />
-                </button>
-
-                <span className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-400 font-mono">
-                  MISSION
-                </span>
-
-                <div className="w-11 h-11" />
-              </div>
-
-              {/* ---------------- CENTERED DUOLINGO-STYLE CARD ---------------- */}
-              <div className="flex-1 w-full max-w-md flex flex-col items-center justify-center text-center my-auto py-6 px-1">
-                <div className="w-full bg-white dark:bg-[#172033] border border-slate-200/80 dark:border-slate-700/60 rounded-[2.5rem] p-6 sm:p-10 shadow-2xl shadow-slate-200/60 dark:shadow-none flex flex-col items-center text-center space-y-6 my-auto">
-                  
-                  {/* Large Mission Illustration */}
-                  <motion.div
-                    initial={{ scale: 0.85, rotate: -4 }}
-                    animate={{ scale: 1, rotate: 0 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                    className="relative"
-                  >
-                    <div className={`w-32 h-32 sm:w-40 sm:h-40 rounded-[2.25rem] flex items-center justify-center text-7xl sm:text-8xl shadow-2xl ${selectedTask.color} text-white border-4 border-white dark:border-slate-700`}>
-                      {selectedTask.icon === Cookie ? (
-                        <img src={cookiesIcon} alt="Cookies" className="w-20 h-20 sm:w-24 sm:h-24 object-contain drop-shadow-md" />
-                      ) : (
-                        <selectedTask.icon size={64} />
-                      )}
-                    </div>
-                  </motion.div>
-
-                  {/* Title & Short Description */}
-                  <div className="space-y-2 pt-2">
-                    <h1 className="text-2xl sm:text-3xl font-black font-display tracking-tight text-slate-900 dark:text-white leading-tight">
-                      {selectedTask.title}
-                    </h1>
-
-                    <p className="text-sm sm:text-base font-semibold text-slate-500 dark:text-slate-300 max-w-xs mx-auto leading-relaxed">
-                      {selectedTask.description}
-                    </p>
-                  </div>
-
-                  {/* Live Progress Bar */}
-                  <div className="w-full space-y-2 pt-2">
-                    <div className="flex justify-between text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-400 font-mono">
-                      <span>Requirement Progress</span>
-                      <span>{selectedTask.current} / {selectedTask.target}</span>
-                    </div>
-                    <div className="w-full h-3.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-200/60 dark:border-slate-700">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-500 ${isRequirementMet ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                        style={{ width: `${progressPercent}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Reward Badge */}
-                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-700/60 text-amber-900 dark:text-amber-300 font-black text-xs sm:text-sm">
-                    <img src={cookiesIcon} alt="Cookies" className="w-5 h-5 object-contain" />
-                    <span>Reward: +{selectedTask.rewardGems} Cookies</span>
-                  </div>
-
-                </div>
-              </div>
-
-              {/* ---------------- STICKY / BOTTOM PRIMARY BUTTON ---------------- */}
-              <div className="w-full max-w-md shrink-0 pt-4 pb-3 px-1 z-10 mt-auto">
-                {isClaimed ? (
-                  <button
-                    disabled
-                    className="w-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-2 border-emerald-300 dark:border-emerald-700 font-black py-4 px-6 rounded-2xl text-base uppercase tracking-wider flex items-center justify-center gap-2 font-sans cursor-default shadow-xs"
-                  >
-                    <CheckCircle2 size={22} className="stroke-[3]" />
-                    <span>Completed & Claimed ✓</span>
-                  </button>
-                ) : isRequirementMet ? (
-                  <button
-                    onClick={async () => {
-                      const claimRes = await rewardService.claimQuest(selectedTask.id, selectedTask.rewardGems);
-                      if (claimRes.granted) {
-                        soundManager.play('complete');
-                        onClaimGems(selectedTask.rewardGems, claimRes.newBalance);
-                        const updated = Array.from(new Set([...completedTaskIds, selectedTask.id]));
-                        setCompletedTaskIds(updated);
-                        progressService.updateProfileData({ completed_daily_challenges: updated });
-                        setSelectedTask(null);
-                      }
-                    }}
-                    className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:brightness-110 active:bg-emerald-700 text-white font-black py-4 px-6 rounded-2xl text-base uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_5px_0_#047857] active:translate-y-1 active:shadow-none transition-all cursor-pointer font-sans"
-                  >
-                    <CheckCircle2 size={22} className="stroke-[3]" />
-                    <span>Claim +{selectedTask.rewardGems} Cookies 🍪</span>
-                  </button>
-                ) : (
-                  <div className="space-y-2 w-full">
-                    <button
-                      disabled
-                      className="w-full bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 font-black py-4 px-6 rounded-2xl text-base uppercase tracking-wider flex items-center justify-center gap-2 font-sans cursor-not-allowed shadow-none border border-slate-300 dark:border-slate-700"
-                    >
-                      <Lock size={18} />
-                      <span>In Progress ({selectedTask.current}/{selectedTask.target})</span>
-                    </button>
-                    {onNavigateTab && (
-                      <button
-                        onClick={() => {
-                          setSelectedTask(null);
-                          onNavigateTab('learn');
-                        }}
-                        className="w-full text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 py-2 underline transition-colors cursor-pointer text-center"
-                      >
-                        Go to Lessons to complete this task →
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          );
-        })()}
-      </AnimatePresence>
     </motion.div>
   );
 }

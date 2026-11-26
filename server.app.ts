@@ -28,6 +28,7 @@ import { generateDirectChikooLesson } from "./src/lib/serverDirectLessonGenerato
 import { generateSitemapXml, generateRobotsTxt, CHIKOO_PLATFORM_SEO } from "./src/lib/seoRegistry";
 import { resolveSeoForPath, injectSeoIntoHtml } from "./src/lib/serverSeo";
 import { redis, CACHE_TTL } from "./src/lib/redis";
+import { getISTWeekStart } from "./src/lib/questConfig";
 import { logProductionError } from "./src/lib/errorUtils";
 
 dotenv.config();
@@ -1339,7 +1340,9 @@ Strict Requirements:
       // Query only public gaming metrics, strictly omitting email and internal database UUIDs
       const { data, error } = await client
         .from("profiles")
-        .select("username, xp, weekly_xp, gems, streak, energy, avatar_id, theme_id, created_at")
+        .select("username, xp, weekly_xp, weekly_xp_week, gems, streak, energy, avatar_id, theme_id, created_at")
+        // Current-week rows first, then by XP, so stale rows can never outrank or crowd out active users.
+        .order("weekly_xp_week", { ascending: false, nullsFirst: false })
         .order("weekly_xp", { ascending: false })
         .limit(500);
 
@@ -1347,8 +1350,14 @@ Strict Requirements:
         throw error;
       }
 
+      // weekly_xp resets lazily (on the next claim), so rows from earlier weeks count as 0.
+      const currentWeek = getISTWeekStart();
+
       // Sanitize each row: assign sequential rank and safe synthetic public ID
       const sanitizedLeaderboard = (data || []).map((row: any, index: number) => {
+        const weeklyXp = String(row.weekly_xp_week ?? '').slice(0, 10) === currentWeek
+          ? Number(row.weekly_xp ?? 0)
+          : 0;
         let safeName = (row.username || '').trim();
         // If the username contains '@' or looks like an email, mask it to prevent PII exposure
         if (!safeName || safeName.includes('@')) {
@@ -1360,9 +1369,10 @@ Strict Requirements:
           id: `player_${index + 1}`,
           username: safeName,
           name: safeName,
-          xp: Number(row.weekly_xp ?? 0),
+          xp: weeklyXp,
           gems: Number(row.gems ?? 0),
-          weekly_xp: Number(row.weekly_xp ?? 0),
+          weekly_xp: weeklyXp,
+          weekly_xp_week: row.weekly_xp_week ?? null,
           streak: Number(row.streak ?? 0),
           energy: Number(row.energy ?? 5),
           avatar_id: row.avatar_id || 'user',

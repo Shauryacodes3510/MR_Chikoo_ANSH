@@ -58,7 +58,7 @@ interface LessonStudyHubProps {
   lessonDescription: string;
   onClose: () => void;
   onStartQuiz: () => void;
-  onEarnXp?: (xp: number) => void;
+  onEarnXp?: (xp: number, kind: 'activity' | 'chest') => Promise<boolean>;
 }
 
 export default function LessonStudyHub({
@@ -513,14 +513,16 @@ export default function LessonStudyHub({
                   </div>
 
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (!activityXpRewarded) {
                         const verified = getPersistedStudyHubRewards(lessonId);
                         if (!verified.activityRewarded) {
-                          soundManager.play('complete');
-                          persistStudyHubReward(lessonId, { activityRewarded: true });
-                          setActivityXpRewarded(true);
-                          if (onEarnXp) onEarnXp(10);
+                          const ok = onEarnXp ? await onEarnXp(10, 'activity') : true;
+                          if (ok) {
+                            soundManager.play('complete');
+                            persistStudyHubReward(lessonId, { activityRewarded: true });
+                            setActivityXpRewarded(true);
+                          }
                         } else {
                           setActivityXpRewarded(true);
                         }
@@ -715,16 +717,16 @@ export default function LessonStudyHub({
                   />
                   
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       if (!isChestOpened && !xpClaimed) {
                         const verified = getPersistedStudyHubRewards(lessonId);
                         if (!verified.chestClaimed) {
-                          soundManager.play('complete');
-                          setIsChestOpened(true);
-                          setXpClaimed(true);
-                          persistStudyHubReward(lessonId, { chestClaimed: true });
-                          if (onEarnXp) {
-                            onEarnXp(30);
+                          const ok = onEarnXp ? await onEarnXp(30, 'chest') : true;
+                          if (ok) {
+                            soundManager.play('complete');
+                            setIsChestOpened(true);
+                            setXpClaimed(true);
+                            persistStudyHubReward(lessonId, { chestClaimed: true });
                           }
                         } else {
                           setIsChestOpened(true);

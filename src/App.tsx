@@ -89,6 +89,7 @@ import {
 import { progressService } from './lib/progressService';
 import { DailyStreakAnimation } from './components/DailyStreakAnimation';
 import { rewardService } from './lib/rewardService';
+import { getISTDateString, isSameISTDay } from './lib/questConfig';
 import { getRewardsAsync } from './lib/rewardsStore';
 import { preloadNextLesson } from './lib/lessonPreloader';
 import { preloadCriticalHomepageAssets } from './lib/homepagePreloader';
@@ -106,6 +107,7 @@ import questIcon from '@/Quest.webp';
 import ranksIcon from '@/leaderboard_icon.webp';
 import rewardsIcon from '@/chest1.webp';
 import avatarIcon from '@/avatar.webp';
+import { getActiveLessonIdx } from './lib/lessonProgress';
 
 const REGEN_TIME_PER_UNIT = 60 * 60 * 1000; // 1 hour per energy unit
 const ENERGY_GAIN_REWARD = 5;
@@ -476,9 +478,7 @@ function AppContent() {
   const [bestAnswerStreak, setBestAnswerStreak] = useState(0);
   const [lastChestClaimedAt, setLastChestClaimedAt] = useState<string | null>(null);
   const dailyChestClaimed = useMemo(() => {
-    if (!lastChestClaimedAt) return false;
-    const lastClaim = new Date(lastChestClaimedAt).getTime();
-    return (Date.now() - lastClaim) < 24 * 60 * 60 * 1000;
+    return isSameISTDay(lastChestClaimedAt);
   }, [lastChestClaimedAt]);
   const [totalChestsClaimed, setTotalChestsClaimed] = useState(0);
   const [chargingAnimation, setChargingAnimation] = useState<{ text: string; id: number } | null>(null);
@@ -1648,7 +1648,7 @@ function AppContent() {
 
   const handleClaimDailyChest = useCallback(async () => {
     try {
-      const todayDate = new Date().toISOString().slice(0, 10);
+      const todayDate = getISTDateString();
       const res = await rewardService.claimDailyChest(50);
       if (res.granted) {
         setGems(res.newBalance);
@@ -2167,17 +2167,6 @@ function AppContent() {
         return;
       }
 
-      // Check if this lesson was already completed previously
-      const wasAlreadyCompleted = completedLessons.includes(lessonId);
-
-      if (wasAlreadyCompleted) {
-        // Replay of previously completed lesson:
-        // Detect that lesson is already completed -> award 0 additional XP/Cookies, do not duplicate events
-        setActiveLesson(null);
-        soundManager.play('complete');
-        return;
-      }
-
       const rawPackId = lessonId.startsWith('practice_') 
         ? lessonId.replace('practice_', '') 
         : lessonId.startsWith('challenge_') 
@@ -2187,6 +2176,10 @@ function AppContent() {
       // Find any matched challenge pack from CMS
       const chalPacks = challengePacks.length > 0 ? challengePacks : getChallengePacks();
       const matchedPack = chalPacks.find(p => p && (p.id === lessonId || ensureUuid(p.id) === ensureUuid(lessonId) || lessonId.includes(p.id) || p.id.includes(lessonId)));
+
+      const isReplay = completedLessons.includes(lessonId) ||
+        Boolean(rawPackId && completedLessons.includes(rawPackId)) ||
+        Boolean(matchedPack && (completedLessons.includes(matchedPack.id) || completedLessons.includes(`practice_${matchedPack.id}`)));
 
       const newCompleted = [
         ...new Set([
@@ -2214,6 +2207,7 @@ function AppContent() {
       }
 
       let bonusXp = 0;
+      let masteryClaimId: string | null = null;
 
       const currentModule = adventureModules.find(m => m.lessons.some(l => l.id === lessonId));
       if (currentModule) {
@@ -2228,9 +2222,11 @@ function AppContent() {
         if (isCurriculumFinishedNow && !wasCurriculumFinishedBefore) {
           // Entire Course / Level Completion: +200 XP & Cookies bonus
           bonusXp = 200;
+          masteryClaimId = `unit_mastery_course_${currentModule.id}`;
         } else if (isCompletedNow && !wasCompletedBefore) {
           // Unit / Module Completion: +50 XP & Cookies bonus
           bonusXp = 50;
+          masteryClaimId = `unit_mastery_${currentModule.id}`;
         }
       }
 
@@ -2263,16 +2259,30 @@ function AppContent() {
         }
       }
 
-      setLastXpEarned(totalEarnedXp);
+      setLastXpEarned(isReplay ? 15 : totalEarnedXp);
       // Optimistically update XP and Gems locally so the top status bar counter updates instantly
-      setXp(prev => prev + totalEarnedXp);
-      setGems(prev => prev + totalEarnedXp);
-      setWeeklyXp(prev => prev + totalEarnedXp);
+      if (!isReplay) {
+        setXp(prev => prev + configuredBaseReward);
+        setWeeklyXp(prev => prev + configuredBaseReward);
+        setGems(prev => prev + totalEarnedXp);
+      } else {
+        setXp(prev => prev + 15);
+        setWeeklyXp(prev => prev + 15);
+        setGems(prev => prev + 15);
+      }
 
       // Save progression synchronously through ProgressService (RPC idempotent)
       progressService.recordLessonCompletion(lessonId, totalEarnedXp).then((updatedProfile) => {
-        if (updatedProfile && typeof updatedProfile.gems === 'number') {
-          setGems(updatedProfile.gems);
+        if (updatedProfile) {
+          if (typeof updatedProfile.gems === 'number') {
+            setGems(updatedProfile.gems);
+          }
+          if (typeof updatedProfile.xp === 'number') {
+            setXp(updatedProfile.xp);
+          }
+          if (typeof updatedProfile.weekly_xp === 'number') {
+            setWeeklyXp(updatedProfile.weekly_xp);
+          }
         }
         progressService.updateProfileData({
           accuracy: (accuracy + sessionAccuracy) / 2
@@ -2280,6 +2290,27 @@ function AppContent() {
       }).catch(err => {
         console.error("Error recording lesson completion:", err);
       });
+
+      if (bonusXp > 0 && masteryClaimId && currentModule) {
+        rewardService.grantReward({
+          claimId: masteryClaimId,
+          amount: 0,
+          xpReward: bonusXp,
+          rewardType: 'unit_mastery',
+          metadata: { moduleId: currentModule.id }
+        }).then((res) => {
+          if (res?.granted) {
+            if (typeof (res as any).xp === 'number') {
+              setXp((res as any).xp);
+            }
+            if (typeof (res as any).weekly_xp === 'number') {
+              setWeeklyXp((res as any).weekly_xp);
+            }
+          }
+        }).catch(err => {
+          console.error("Error granting unit mastery reward:", err);
+        });
+      }
 
       // Persist results from randomized quizzes, revisions, or exams locally via Question Service
       if (lessonId.startsWith('assess_') || lessonId.startsWith('practice_blitz_')) {
@@ -2472,7 +2503,7 @@ function AppContent() {
               bookmarkedLessons={bookmarkedLessons}
               onToggleBookmark={handleToggleBookmark}
               onLessonSelect={handleLessonSelect}
-              currentLessonId={adventureModules.flatMap(m => m.lessons || []).find(l => !completedLessons.includes(l.id))?.id || adventureModules[0]?.lessons?.[0]?.id || ''}
+              currentLessonId={(() => { const flat = adventureModules.flatMap(m => m.lessons || []); return flat[getActiveLessonIdx(flat, completedLessons)]?.id || flat[0]?.id || ''; })()}
               setView={setView}
               modules={adventureModules}
               isAdmin={isDbAdmin}
@@ -2539,11 +2570,6 @@ function AppContent() {
             className="h-full"
           >
             <QuestsView 
-              gems={gems}
-              streak={streak}
-              completedCount={completedLessons.length}
-              accuracy={accuracy}
-              bestAnswerStreak={bestAnswerStreak}
               lastChestClaimedAt={lastChestClaimedAt}
               onClaimGems={handleClaimGems}
               onClaimChest={handleClaimDailyChest}
@@ -2599,6 +2625,30 @@ function AppContent() {
                 isSchoolAccount={isSchoolAccount}
                 schoolInfo={isSchoolAccount ? schoolInfo : null}
                 onOpenSchoolAdmin={isSchoolAccount && schoolInfo ? () => setIsSchoolAdminActive(true) : undefined}
+                onGrantBadgeXp={async (badgeId: string) => {
+                  try {
+                    const res = await rewardService.grantReward({
+                      claimId: `badge_${badgeId}`,
+                      amount: 100,
+                      xpReward: 100,
+                      rewardType: 'badge',
+                      metadata: { badgeId }
+                    });
+                    if (res?.granted) {
+                      if (typeof res.newBalance === 'number') {
+                        setGems(res.newBalance);
+                      }
+                      if (typeof res.xp === 'number') {
+                        setXp(res.xp);
+                      }
+                      if (typeof res.weekly_xp === 'number') {
+                        setWeeklyXp(res.weekly_xp);
+                      }
+                    }
+                  } catch (err) {
+                    console.error("Error granting badge XP:", err);
+                  }
+                }}
               />
             </div>
           </motion.div>
@@ -2656,7 +2706,12 @@ function AppContent() {
       const hasCompletedLessons = Array.isArray(profile.completed_lessons) && profile.completed_lessons.length > 0;
       const hasXp = typeof profile.xp === 'number' && profile.xp > 0;
       const hasStreak = typeof profile.streak === 'number' && profile.streak > 0;
-      if (hasCompletedLessons || hasXp || hasStreak) return true;
+      const hasTrophies = typeof profile.trophies === 'number' && profile.trophies > 0;
+      const hasGems = typeof profile.gems === 'number' && profile.gems > 0;
+      if (hasCompletedLessons || hasXp || hasStreak || hasTrophies || hasGems) {
+        localStorage.setItem(`chikoo_onboarding_completed_${cleanEmail}`, 'true');
+        return true;
+      }
     }
 
     // 3. Onboarding reason or structured onboarding data
@@ -2699,7 +2754,8 @@ function AppContent() {
   // 1. SplashScreen overlays everything at z-[999999] while loading
   // 2. Either AuthScreen or the complete Learning Path shell is rendered underneath from the very start
   // 3. When splash reaches 100% and isReady, it fades out instantly with zero layout re-mounting or spinner
-  const showAuthView = !isRestoringSession && (!sessionUser || !isOnboardingComplete);
+  const isCheckingUserStatus = !isRestoringSession && !!sessionUser && !isOnboardingComplete && (!isProfileReady || !dataLoaded);
+  const showAuthView = !isRestoringSession && !isCheckingUserStatus && (!sessionUser || !isOnboardingComplete);
 
   // =========================================================================
   // DESKTOP-FIRST ENTRY & PLATFORM ROUTING
@@ -2734,7 +2790,7 @@ function AppContent() {
               }
             }}
             onContinueToApp={() => navigateTo('/app')}
-            isAuthenticated={!showAuthView}
+            isAuthenticated={!showAuthView && !isCheckingUserStatus}
             username={username || sessionUser || 'Explorer'}
             onNavigateSeo={(path) => navigateTo(path)}
           />
@@ -2744,6 +2800,13 @@ function AppContent() {
   }
 
   if (isDesktop && (cleanPath === '/login' || cleanPath === '/signup')) {
+    if (isCheckingUserStatus) {
+      return (
+        <ErrorBoundary>
+          <ChikooReachingLoader fullScreen={true} />
+        </ErrorBoundary>
+      );
+    }
     if (!showAuthView) {
       navigateTo('/app');
     } else {
@@ -2768,6 +2831,13 @@ function AppContent() {
   }
 
   if (isDesktop && (cleanPath === '/app' || cleanPath.startsWith('/app'))) {
+    if (isCheckingUserStatus) {
+      return (
+        <ErrorBoundary>
+          <ChikooReachingLoader fullScreen={true} />
+        </ErrorBoundary>
+      );
+    }
     if (showAuthView) {
       return (
         <ErrorBoundary>
@@ -2816,7 +2886,9 @@ function AppContent() {
       </AnimatePresence>
 
       {/* 2. Sub-surface content pre-rendered and painted beneath the splash */}
-      {showAuthView ? (
+      {isCheckingUserStatus ? (
+        <ChikooReachingLoader fullScreen={true} />
+      ) : showAuthView ? (
         <Suspense fallback={<ChikooReachingLoader fullScreen={true} />}>
           <AuthScreen 
             onLoginSuccess={handleLoginSuccess} 
@@ -2880,7 +2952,7 @@ function AppContent() {
               onOpenSchoolAdmin={() => setIsSchoolAdminActive(true)}
               onSignOutClick={() => setShowSignOutConfirm(true)}
               hasUnclaimedDailyChallenge={DAILY_CHALLENGES.some(dc => !completedLessons.includes(dc.id))}
-              hasUnclaimedDailyChest={!lastChestClaimedAt || (new Date().getTime() - new Date(lastChestClaimedAt).getTime() >= 24 * 60 * 60 * 1000)}
+              hasUnclaimedDailyChest={!isSameISTDay(lastChestClaimedAt)}
               onVisitLanding={() => navigateTo('/')}
               className="hidden lg:flex lg:w-64 xl:w-72 shrink-0"
             />
@@ -3018,9 +3090,27 @@ function AppContent() {
               lessonTitle={activeStudyLesson.title}
               lessonDescription={activeStudyLesson.description}
               onClose={() => setActiveStudyLesson(null)}
-              onEarnXp={(amt) => {
-                setXp(prev => prev + amt);
-                setWeeklyXp(prev => prev + amt);
+              onEarnXp={async (amt, kind) => {
+                try {
+                  const res = await rewardService.grantReward({
+                    claimId: `studyhub_${activeStudyLesson.id}_${kind}`,
+                    amount: 0,
+                    xpReward: amt,
+                    rewardType: 'studyhub'
+                  });
+                  if (res?.granted) {
+                    if (typeof res.xp === 'number') {
+                      setXp(res.xp);
+                    }
+                    if (typeof res.weekly_xp === 'number') {
+                      setWeeklyXp(res.weekly_xp);
+                    }
+                  }
+                  return Boolean(res?.granted || res?.alreadyClaimed);
+                } catch (err) {
+                  console.error("Error granting studyhub reward:", err);
+                  return false;
+                }
               }}
               onStartQuiz={() => {
                 const lessonId = activeStudyLesson.id;
@@ -3096,10 +3186,21 @@ function AppContent() {
                   onComplete={handleLessonComplete}
                   onStreakRestore={handleRestoreEnergy}
                   onQuestionAnswered={(correct) => {
-                    if (activeLesson?.id !== 'recharge_quest' && !activeLesson?.id.startsWith('practice')) {
+                    const lid = String(activeLesson?.id || '');
+                    const isFreeReplay =
+                      lid === 'recharge_quest' ||
+                      lid.startsWith('practice') ||
+                      completedLessons.some(id => String(id).toLowerCase() === lid.toLowerCase());
+                    if (!isFreeReplay) {
                       handleQuestionAnswered(correct);
                     }
                   }}
+                  skipHeartCheck={(() => {
+                    const lid = String(activeLesson?.id || '');
+                    return lid === 'recharge_quest' ||
+                      lid.startsWith('practice') ||
+                      completedLessons.some(id => String(id).toLowerCase() === lid.toLowerCase());
+                  })()}
                   onRefillEnergy={() => setShowEnergyRefillModal(true)}
                   energy={energy}
                   nextEnergyIn={nextEnergyIn}

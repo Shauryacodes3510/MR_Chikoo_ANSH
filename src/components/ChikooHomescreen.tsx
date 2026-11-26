@@ -20,6 +20,7 @@ import { biomeChannel } from '../lib/biomeChannel';
 // @ts-ignore
 import { getBiomeImage, getBiomeImagesArray, getModuleBiomeImage, preloadNextBiomes, PUBLIC_BIOME_FALLBACKS, getUnitChikooImage, ALL_BIOME_IMAGES } from '../lib/biomeImages';
 import { preloadLessonAssets } from '../lib/lessonPreloader';
+import { getActiveLessonIdx } from '../lib/lessonProgress';
 import TopStatusBar from './TopStatusBar';
 import UnitLearningPath from './UnitLearningPath';
 import { AnimatedFireFlame } from './HomescreenStreakBar';
@@ -801,7 +802,8 @@ const HomeWindingSection = memo(function HomeWindingSection({
         const globalIdx = startIdx + lessonIdx;
         const isLessonCompleted = completedLessons.includes(lesson.id);
         const isActiveLesson = globalIdx === resolvedActiveIdx;
-        const isLocked = globalIdx > resolvedActiveIdx;
+        // Never re-lock a lesson the user already finished (e.g. after a module reorder or a new lesson is inserted before it)
+        const isLocked = globalIdx > resolvedActiveIdx && !isLessonCompleted;
 
         // Smooth flowing S-curve so the eye naturally follows progression
         const angle = (lessonIdx * Math.PI) / 2;
@@ -997,8 +999,12 @@ function ChikooHomescreen({
 
   // Determine current active Level index
   const activeLevelIdx = useMemo(() => {
-    const idx = modules.findIndex(m => !(m.lessons || []).every(l => completedLessons.includes(l.id)));
-    return idx === -1 ? Math.max(0, modules.length - 1) : Math.max(0, idx);
+    const flat = modules.flatMap(m => m.lessons || []);
+    const activeIdx = getActiveLessonIdx(flat, completedLessons);
+    if (activeIdx >= flat.length) return Math.max(0, modules.length - 1);
+    const activeId = flat[activeIdx].id;
+    const idx = modules.findIndex(m => (m.lessons || []).some(l => l.id === activeId));
+    return Math.max(0, idx);
   }, [modules, completedLessons]);
 
   // Smart preloading: prefetch next biome background silently when idle (3s delay)
@@ -1037,13 +1043,13 @@ function ChikooHomescreen({
   // Find next lesson for the Mascot bubble trigger
   const nextLesson = useMemo(() => {
     const flatLessons = modules.flatMap(m => m.lessons);
-    return flatLessons.find(l => !completedLessons.includes(l.id)) || flatLessons[0];
+    return flatLessons[getActiveLessonIdx(flatLessons, completedLessons)] || flatLessons[0];
   }, [modules, completedLessons]);
 
   // Find current active module and active lesson
   const currentActiveModule = useMemo(() => {
     const flatLessons = modules.flatMap(m => m.lessons || []);
-    const currentActiveLesson = flatLessons.find(l => !completedLessons.includes(l.id)) || flatLessons[0];
+    const currentActiveLesson = flatLessons[getActiveLessonIdx(flatLessons, completedLessons)] || flatLessons[0];
     const currentActiveLessonId = currentActiveLesson?.id || '';
     return modules.find(m => m.lessons?.some(l => l.id === currentActiveLessonId)) || modules[0];
   }, [modules, completedLessons]);
@@ -1115,7 +1121,9 @@ function ChikooHomescreen({
     const flatLessons = modules.flatMap(m => m.lessons || []);
     const firstLessonOfScrolled = unitCardsMetadata[visibleModuleIdx]?.lessons?.[0];
     const globalLessonIdx = firstLessonOfScrolled ? flatLessons.findIndex(al => al.id === firstLessonOfScrolled.id) : -1;
-    return globalLessonIdx > 0 && !completedLessons.includes(flatLessons[globalLessonIdx - 1]?.id || '');
+    const activeIdx = getActiveLessonIdx(flatLessons, completedLessons);
+    const hasProgress = (unitCardsMetadata[visibleModuleIdx]?.lessons || []).some(l => completedLessons.includes(l.id));
+    return globalLessonIdx > 0 && globalLessonIdx > activeIdx && !hasProgress;
   }, [modules, unitCardsMetadata, completedLessons, visibleModuleIdx]);
   const [isGuideCollapsed, setIsGuideCollapsed] = useState(false);
   const [isChikooCardCollapsed, setIsChikooCardCollapsed] = useState(false);
@@ -1190,9 +1198,7 @@ function ChikooHomescreen({
     }
     
     const flatLessons = modules.flatMap(m => m.lessons || []);
-    const currentActiveLessonId = flatLessons.find(l => !completedLessons.includes(l.id))?.id || flatLessons[0]?.id || '';
-    const activeLessonFlatIdx = flatLessons.findIndex(l => l.id === currentActiveLessonId);
-    const resolvedActiveIdx = activeLessonFlatIdx === -1 ? flatLessons.length : activeLessonFlatIdx;
+    const resolvedActiveIdx = getActiveLessonIdx(flatLessons, completedLessons);
     
     setShakeNodeIndex(resolvedActiveIdx);
     setTimeout(() => setShakeNodeIndex(null), 1000);
@@ -1481,7 +1487,9 @@ function ChikooHomescreen({
 
   const handleNodeClick = (e: React.MouseEvent, module: Module, idx: number) => {
     soundManager.play('click');
-    const isLocked = idx > activeLevelIdx;
+    // A fully completed level stays open even if an earlier, unfinished level appears before it
+    const isLevelDone = (module.lessons || []).length > 0 && (module.lessons || []).every(l => completedLessons.includes(l.id));
+    const isLocked = idx > activeLevelIdx && !isLevelDone;
     if (isLocked) {
       soundManager.play('pop');
       setShakeNodeIndex(idx);
@@ -1842,9 +1850,7 @@ function ChikooHomescreen({
               }
 
               const flatLessons = selectedWorldModules.flatMap(m => m.lessons || []);
-              const currentActiveLessonId = flatLessons.find(l => !completedLessons.includes(l.id))?.id || flatLessons[0]?.id || '';
-              const activeLessonFlatIdx = flatLessons.findIndex(l => l.id === currentActiveLessonId);
-              const resolvedActiveIdx = activeLessonFlatIdx === -1 ? flatLessons.length : activeLessonFlatIdx;
+              const resolvedActiveIdx = getActiveLessonIdx(flatLessons, completedLessons);
 
               if (selectedWorldModules.length === 0) {
                 return (
@@ -1870,7 +1876,8 @@ function ChikooHomescreen({
                   // A module is locked if its first lesson is locked
                   const firstLesson = module.lessons?.[0];
                   const globalLessonIdx = firstLesson ? flatLessons.findIndex(al => al.id === firstLesson.id) : -1;
-                  const isModuleLocked = globalLessonIdx > 0 && !completedLessons.includes(flatLessons[globalLessonIdx - 1]?.id || '');
+                  const moduleHasProgress = (module.lessons || []).some(l => completedLessons.includes(l.id));
+                  const isModuleLocked = globalLessonIdx > 0 && globalLessonIdx > resolvedActiveIdx && !moduleHasProgress;
 
                   return (
                     <div key={`module-${module.id || 'mod'}-${moduleIdx}`} data-module-index={moduleIdx} className={`w-full flex flex-col items-center ${moduleIdx === 0 ? 'mt-0' : ''}`}>

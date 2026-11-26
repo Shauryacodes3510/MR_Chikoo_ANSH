@@ -298,15 +298,34 @@ export default function AuthScreen({ onLoginSuccess, onboardingEmail, initialMod
           if (signInData?.session) {
             console.log("[Auth Trace] Login result: Success. User ID:", signInData.session.user.id);
 
-            const profile = await getProfile(cleanEmail);
+            const userMeta = (signInData.session.user as any)?.user_metadata || {};
+            let profile: any = null;
+            try {
+              profile = await getProfile(cleanEmail, true, signInData.session.user.id);
+            } catch (pErr) {
+              console.warn("[Auth Trace] Error fetching profile during login check:", pErr);
+            }
 
-            const hasCompletedOnboarding = 
+            const hasCompletedLessons = Array.isArray(profile?.completed_lessons) && profile.completed_lessons.length > 0;
+            const hasXp = typeof profile?.xp === 'number' && profile.xp > 0;
+            const hasStreak = typeof profile?.streak === 'number' && profile.streak > 0;
+            const hasTrophies = typeof profile?.trophies === 'number' && profile.trophies > 0;
+            const hasGems = typeof profile?.gems === 'number' && profile.gems > 0;
+            const hasMetadataOnboarding = userMeta?.onboarding_completed === true;
+
+            const isExistingUser = 
+              hasMetadataOnboarding ||
+              profile?.onboarding_completed === true ||
+              hasCompletedLessons ||
+              hasXp ||
+              hasStreak ||
+              hasTrophies ||
+              hasGems ||
               localStorage.getItem(`chikoo_onboarding_completed_${cleanEmail}`) === 'true' ||
-              !!localStorage.getItem(`CHIKOO_USER_REASON_${cleanEmail}`) ||
-              profile?.onboarding_completed === true;
+              !!localStorage.getItem(`CHIKOO_USER_REASON_${cleanEmail}`);
 
-            if (!hasCompletedOnboarding) {
-              console.log("[Auth Trace] User logged in but has not completed onboarding. Directing to ChikooOnboarding.");
+            if (!isExistingUser) {
+              console.log("[Auth Trace] Brand new user logged in without prior progress or onboarding. Directing to ChikooOnboarding.");
               setEmail(cleanEmail);
               if (profile?.username) {
                 setName(profile.username);

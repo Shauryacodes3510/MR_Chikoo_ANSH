@@ -2287,6 +2287,7 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
   // Robust unit reordering with instant state update, localStorage persistence, and database sync
   const reorderUnit = async (moduleId: string, direction: 'up' | 'down', e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (!window.confirm('This renumbers ALL units in the live database and changes what real students see unlocked. Reorder anyway?')) return;
     const isSpace = modulesList.some(m => m.id === moduleId);
     let fullList = isSpace ? [...modulesList] : [...practiceModulesList];
     const targetMod = fullList.find(m => m.id === moduleId);
@@ -2349,6 +2350,7 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
   };
 
   const saveOrder = async () => {
+    if (!window.confirm('Save this unit order to the live database? Real students will see the new order immediately.')) return;
     try {
       const modulesToUpdate = pendingModules.map((m, idx) => ({
         ...m,

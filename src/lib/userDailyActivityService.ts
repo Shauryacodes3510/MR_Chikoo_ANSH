@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured, isValidUuid } from './supabase';
+import { getISTDateString } from './questConfig';
 import { format, subDays, startOfDay, parseISO, isValid, eachDayOfInterval } from 'date-fns';
 
 export interface UserDailyActivityRecord {
@@ -77,7 +78,7 @@ export async function recordUserDailyActivity(deltas: {
       p_cookies_delta: deltas.cookiesDelta ?? 0,
       p_xp_delta: deltas.xpDelta ?? 0,
       p_time_spent_delta: deltas.timeSpentDelta ?? 0,
-      p_activity_date: deltas.activityDate || format(new Date(), 'yyyy-MM-dd'),
+      p_activity_date: deltas.activityDate || getISTDateString(),
       p_user_id: targetUserId
     };
 
@@ -109,7 +110,7 @@ async function fallbackUpsertDailyActivity(userId: string, deltas: {
   activityDate?: string;
 }): Promise<UserDailyActivityRecord | null> {
   if (!supabase) return null;
-  const activityDate = deltas.activityDate || format(new Date(), 'yyyy-MM-dd');
+  const activityDate = deltas.activityDate || getISTDateString();
   
   try {
     // 1. Fetch existing row for today
@@ -168,7 +169,7 @@ export async function fetchUserDailyActivityRecords(userId?: string, limitDays =
 
     if (!targetUserId || !isValidUuid(targetUserId)) return [];
 
-    const startDate = format(subDays(new Date(), limitDays), 'yyyy-MM-dd');
+    const startDate = getISTDateString(subDays(new Date(), limitDays));
 
     const { data, error } = await supabase
       .from('user_daily_activity')
