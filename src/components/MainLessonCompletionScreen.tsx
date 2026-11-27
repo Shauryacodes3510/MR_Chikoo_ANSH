@@ -918,7 +918,7 @@ export const MainLessonCompletionScreen: React.FC<MainLessonCompletionScreenProp
                   whileTap={{ scale: 0.98 }}
                   type="button"
                   onClick={handleProceedClick}
-                  className="relative overflow-hidden w-full py-3.5 px-5 rounded-2xl bg-[#FF6B00] hover:bg-[#F06100] active:bg-[#D95500] text-white font-black text-sm sm:text-base uppercase tracking-wider shadow-[0_10px_22px_rgba(255,107,0,0.35)] border border-orange-400/40 flex items-center justify-center gap-2 cursor-pointer select-none touch-manipulation transition-all duration-150"
+                  className="relative overflow-hidden w-full py-3.5 px-5 rounded-2xl bg-[#FF6B00] hover:bg-[#F06100] active:bg-[#D95500] text-white font-black text-sm sm:text-base uppercase tracking-wider shadow-[0_10px_22px_rgba(255,107,0,0.35)] border border-orange-400/40 flex items-center justify-center gap-2 cursor-pointer transition-all duration-150"
                 >
                   {/* Subtle Shimmer across the primary action button */}
                   <motion.div
@@ -934,7 +934,7 @@ export const MainLessonCompletionScreen: React.FC<MainLessonCompletionScreenProp
                       ease: "easeInOut",
                     }}
                   />
-                  <span className="relative z-10 flex items-center justify-center gap-1.5 font-display pointer-events-none select-none">
+                  <span className="relative z-10 flex items-center justify-center gap-1.5 font-display">
                     <span>Continue Adventure</span>
                     <ChevronRight size={18} className="stroke-[3]" />
                   </span>

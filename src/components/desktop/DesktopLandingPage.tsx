@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useRef } from 'react';
+import React, { memo, useCallback } from 'react';
 import { LandingNavbar } from './landing/LandingNavbar';
 import { LandingHero } from './landing/LandingHero';
 import { LandingFeatures } from './landing/LandingFeatures';
@@ -24,24 +24,6 @@ export const DesktopLandingPage = memo(function DesktopLandingPage({
   username = 'Explorer',
   onNavigateSeo,
 }: DesktopLandingPageProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Restore smooth scrolling on body/html while landing page is visible
-  useEffect(() => {
-    const prevBodyOverflowY = document.body.style.overflowY;
-    const prevHtmlOverflowY = document.documentElement.style.overflowY;
-    const prevBodyBg = document.body.style.backgroundColor;
-
-    document.body.style.overflowY = 'auto';
-    document.documentElement.style.overflowY = 'auto';
-    document.body.style.backgroundColor = '#FAFAFA';
-
-    return () => {
-      document.body.style.overflowY = prevBodyOverflowY;
-      document.documentElement.style.overflowY = prevHtmlOverflowY;
-      document.body.style.backgroundColor = prevBodyBg;
-    };
-  }, []);
 
   const handleGetApp = useCallback(() => {
     try {
@@ -92,12 +74,7 @@ export const DesktopLandingPage = memo(function DesktopLandingPage({
   }, [isAuthenticated, onContinueToApp, onStartAdventure]);
 
   return (
-    <div
-      ref={containerRef}
-      id="landing-scroll-container"
-      className="fixed inset-0 w-full h-full bg-[#FAFAFA] text-slate-900 font-sans selection:bg-blue-500/20 overflow-y-auto overflow-x-hidden scroll-smooth z-20"
-      style={{ WebkitOverflowScrolling: 'touch' }}
-    >
+    <div className="min-h-screen bg-[#FAFAFA] text-slate-900 font-sans selection:bg-blue-500/20 overflow-x-hidden">
       {/* 1. Sticky Navigation Bar */}
       <LandingNavbar
         onExplore={handleExplore}
@@ -109,7 +86,6 @@ export const DesktopLandingPage = memo(function DesktopLandingPage({
       <LandingHero
         onExplore={handleExplore}
         onGetApp={handleGetApp}
-        isAuthenticated={isAuthenticated}
       />
 
       {/* 3. Features Section with Interactive Phone Showcases */}

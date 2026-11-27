@@ -5,12 +5,11 @@ import { ArrowRight, Download, Star } from 'lucide-react';
 interface LandingHeroProps {
   onExplore: () => void;
   onGetApp: () => void;
-  isAuthenticated?: boolean;
 }
 
-export const LandingHero: React.FC<LandingHeroProps> = ({ onExplore, onGetApp, isAuthenticated = false }) => {
+export const LandingHero: React.FC<LandingHeroProps> = ({ onExplore, onGetApp }) => {
   return (
-    <section id="home" className="relative pt-32 pb-32 lg:pt-48 lg:pb-48 overflow-hidden bg-[#9FE1FF] text-slate-900 block">
+    <section id="home" className="relative pt-32 pb-32 lg:pt-48 lg:pb-48 overflow-hidden bg-[#9FE1FF]">
       {/* Cloud SVG decorations */}
       <div className="absolute top-0 left-0 w-full h-full z-0 overflow-hidden pointer-events-none">
         {/* Top Left Cloud */}
@@ -64,7 +63,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onExplore, onGetApp, i
       <motion.div
         initial={{ y: 50, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.3, duration: 0.6 }}
+        transition={{ delay: 0.5, duration: 0.8 }}
         className="absolute bottom-[-70px] lg:bottom-[-120px] left-[0%] lg:left-[7%] w-[180px] lg:w-[260px] z-30 origin-bottom pointer-events-none"
       >
         <img
@@ -76,7 +75,12 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onExplore, onGetApp, i
 
       <div className="max-w-7xl mx-auto px-6 md:px-12 grid lg:grid-cols-2 gap-12 lg:gap-8 items-center relative z-10">
         {/* Left Content */}
-        <div className="flex flex-col items-start">
+        <motion.div
+          initial={{ opacity: 0, x: -50 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
+          className="flex flex-col items-start"
+        >
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50/90 backdrop-blur-sm border border-blue-100 mb-8 shadow-sm">
             <span className="text-xs font-bold tracking-wide text-blue-700 uppercase">
@@ -99,21 +103,19 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onExplore, onGetApp, i
           <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 mb-12 w-full sm:w-auto">
             <button
               onClick={onExplore}
-              className="w-full sm:w-auto px-8 py-4 rounded-full bg-[#3B82F6] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white font-bold text-lg flex items-center justify-center gap-2 transition-all hover:shadow-xl hover:shadow-blue-500/30 active:scale-95 group cursor-pointer select-none"
+              className="w-full sm:w-auto px-8 py-4 rounded-full bg-[#3B82F6] text-white font-bold text-lg flex items-center justify-center gap-2 hover:bg-[#1D4ED8] transition-all hover:shadow-xl hover:shadow-blue-500/30 active:scale-95 group cursor-pointer"
             >
-              <span className="pointer-events-none">
-                {isAuthenticated ? 'Continue Adventure' : 'Start Learning Now'}
-              </span>
-              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform pointer-events-none" />
+              Start Learning Now
+              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </button>
             <button
               onClick={onGetApp}
-              className="w-full sm:w-auto px-8 py-4 rounded-full bg-white text-slate-800 font-bold text-lg flex items-center justify-center gap-3 hover:bg-slate-50 transition-all border border-slate-200 hover:border-slate-300 shadow-sm active:scale-95 cursor-pointer select-none"
+              className="w-full sm:w-auto px-8 py-4 rounded-full bg-white text-slate-800 font-bold text-lg flex items-center justify-center gap-3 hover:bg-slate-50 transition-all border border-slate-200 hover:border-slate-300 shadow-sm active:scale-95 cursor-pointer"
             >
-              <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center pointer-events-none">
+              <div className="w-8 h-8 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center">
                 <Download className="w-4 h-4 text-blue-600" />
               </div>
-              <span className="pointer-events-none">Get App</span>
+              Get App
             </button>
           </div>
 
@@ -152,10 +154,15 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onExplore, onGetApp, i
               </p>
             </div>
           </div>
-        </div>
+        </motion.div>
 
         {/* Right Content (Mascot) */}
-        <div className="relative h-[480px] lg:h-[650px] flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.8, ease: 'easeOut', delay: 0.2 }}
+          className="relative h-[480px] lg:h-[650px] flex items-center justify-center"
+        >
           {/* Floating Mascot */}
           <motion.div
             animate={{ y: [-15, 15, -15] }}
@@ -173,7 +180,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({ onExplore, onGetApp, i
           <div className="absolute bottom-[10%] left-1/2 -translate-x-1/2 w-[80%] max-w-[400px] aspect-[3/1] bg-gradient-to-b from-blue-100 to-transparent rounded-[100%] blur-md -z-10"></div>
           <div className="absolute bottom-[5%] left-1/2 -translate-x-1/2 w-[70%] max-w-[350px] h-[30px] rounded-[100%] border-4 border-blue-200 bg-white shadow-xl -z-10"></div>
           <div className="absolute bottom-[3%] left-1/2 -translate-x-1/2 w-[75%] max-w-[400px] h-[30px] rounded-[100%] border-2 border-blue-100 bg-blue-100/50 -z-20"></div>
-        </div>
+        </motion.div>
       </div>
     </section>
   );

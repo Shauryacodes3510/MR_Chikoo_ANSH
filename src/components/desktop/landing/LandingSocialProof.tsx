@@ -27,9 +27,15 @@ const stats = [
 
 export const LandingSocialProof: React.FC = () => {
   return (
-    <section id="social-proof" className="py-12 lg:py-24 bg-white text-slate-900 relative z-10 overflow-hidden block">
+    <section id="social-proof" className="py-12 lg:py-24 bg-white overflow-hidden">
       <div className="max-w-7xl mx-auto px-6 md:px-12">
-        <div className="relative bg-gradient-to-r from-slate-50 to-blue-50 rounded-3xl p-8 lg:p-12 overflow-hidden flex flex-col lg:flex-row items-center justify-between border border-blue-100/70 shadow-sm">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.8 }}
+          className="relative bg-gradient-to-r from-slate-50 to-blue-50 rounded-3xl p-8 lg:p-12 overflow-hidden flex flex-col lg:flex-row items-center justify-between border border-blue-100/60 shadow-sm"
+        >
           {/* Left Content */}
           <div className="flex-1 w-full lg:w-auto z-10 mb-10 lg:mb-0">
             <h2 className="text-3xl lg:text-4xl font-extrabold text-slate-900 mb-10 text-center lg:text-left">
@@ -63,7 +69,7 @@ export const LandingSocialProof: React.FC = () => {
             <motion.div
               animate={{ y: [-10, 10, -10] }}
               transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-              className="absolute bottom-0 left-0 lg:left-[-20px] w-[240px] aspect-[4/5] z-20 rounded-[2rem] overflow-hidden shadow-2xl ring-8 ring-white/80 bg-white"
+              className="absolute bottom-0 left-0 lg:left-[-20px] w-[240px] aspect-[4/5] z-20 rounded-[2rem] overflow-hidden shadow-2xl ring-8 ring-white/60"
             >
               <img
                 src="/hand chikoo.png"
@@ -73,16 +79,22 @@ export const LandingSocialProof: React.FC = () => {
             </motion.div>
 
             {/* Learn anytime text */}
-            <div className="relative z-30 ml-auto lg:mr-8 text-center lg:text-right">
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8, delay: 0.3 }}
+              className="relative z-30 ml-auto lg:mr-8 text-center lg:text-right"
+            >
               <h3 className="text-3xl lg:text-4xl font-black text-slate-900 leading-tight">
                 Learn <br />
                 <span className="text-blue-600">
                   anytime, <br /> anywhere!
                 </span>
               </h3>
-            </div>
+            </motion.div>
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
   );
