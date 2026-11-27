@@ -2,6 +2,23 @@
  * Utility helpers for Curriculum Studio (export data cleaning, etc.)
  */
 
+export function getChallengeIcon(type: string): string {
+  switch (type) {
+    case 'content_screen': return '🖼️';
+    case 'visual_lesson_screen': return '🎬';
+    case 'tap_right_answer': return '🎯';
+    case 'image_reveal': return '📸';
+    case 'fill_in_blank': return '📝';
+    case 'ai_vs_human': return '🪐';
+    case 'spot_the_ai': return '🔍';
+    case 'drag_and_drop': return '🧩';
+    case 'sort_sequence': return '🔢';
+    case 'match_pairs': return '🤝';
+    case 'build_concept': return '💡';
+    default: return '📄';
+  }
+}
+
 export function getChallengeLabel(type: string): string {
   switch (type) {
     case 'content_screen': return 'Concept Screen';

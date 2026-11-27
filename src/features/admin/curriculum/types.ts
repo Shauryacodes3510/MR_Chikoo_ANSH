@@ -51,11 +51,19 @@ export interface OutlineMapProps {
   onExportLessonJson: (les: Lesson) => void;
   triggerNotification: (msg: string, type?: 'success' | 'error' | 'info') => void;
   soundManager: any;
+  setChalId?: (id: string) => void;
+  setSelectedModuleWorldId?: (id: string) => void;
   onClose?: () => void;
-  onOpenImportModal?: (opts: { level: 'unit' | 'lesson'; unitId?: string; worldId?: string }) => void;
+  onOpenImportModal?: (opts?: { level?: 'unit' | 'lesson'; unitId?: string; worldId?: string }) => void;
   onCopyUnitJson?: (mod: Module) => void;
   onExportUnitJson?: (mod: Module) => void;
+  onCopyWorldJson?: (worldId: string) => void;
+  onExportWorldJson?: (worldId: string) => void;
+  onDeleteChallenge?: (modId: string, lesId: string, chalId: string) => void;
+  onOpenScreenPicker?: (opts: { moduleId: string; lessonId: string }) => void;
   onReorderUnit?: (modId: string, direction: 'up' | 'down', e: React.MouseEvent) => void;
+  onSaveOrder?: () => void;
+  isOrderChanged?: boolean;
   isModuleInSelectedWorld?: (mod: Module) => boolean;
 }
 
@@ -96,11 +104,19 @@ export interface UnitEditorProps {
   onExportLessonJson: (les: Lesson) => void;
   triggerNotification: (msg: string, type?: 'success' | 'error' | 'info') => void;
   soundManager: any;
+  setChalId?: (id: string) => void;
+  setSelectedModuleWorldId?: (id: string) => void;
   onClose?: () => void;
-  onOpenImportModal?: (opts: { level: 'unit' | 'lesson'; unitId?: string; worldId?: string }) => void;
+  onOpenImportModal?: (opts?: { level?: 'unit' | 'lesson'; unitId?: string; worldId?: string }) => void;
   onCopyUnitJson?: (mod: Module) => void;
   onExportUnitJson?: (mod: Module) => void;
+  onCopyWorldJson?: (worldId: string) => void;
+  onExportWorldJson?: (worldId: string) => void;
+  onDeleteChallenge?: (modId: string, lesId: string, chalId: string) => void;
+  onOpenScreenPicker?: (opts: { moduleId: string; lessonId: string }) => void;
   onReorderUnit?: (modId: string, direction: 'up' | 'down', e: React.MouseEvent) => void;
+  onSaveOrder?: () => void;
+  isOrderChanged?: boolean;
   isModuleInSelectedWorld?: (mod: Module) => boolean;
 }
 
@@ -269,11 +285,19 @@ export interface ScreenEditorProps {
   onDeleteChallenge: (id: string) => void;
   triggerNotification: (msg: string, type?: 'success' | 'error' | 'info') => void;
   soundManager: any;
+  setChalId?: (id: string) => void;
+  setSelectedModuleWorldId?: (id: string) => void;
   onClose?: () => void;
-  onOpenImportModal?: (opts: { level: 'unit' | 'lesson'; unitId?: string; worldId?: string }) => void;
+  onOpenImportModal?: (opts?: { level?: 'unit' | 'lesson'; unitId?: string; worldId?: string }) => void;
   onCopyUnitJson?: (mod: Module) => void;
   onExportUnitJson?: (mod: Module) => void;
+  onCopyWorldJson?: (worldId: string) => void;
+  onExportWorldJson?: (worldId: string) => void;
+  onDeleteChallenge?: (modId: string, lesId: string, chalId: string) => void;
+  onOpenScreenPicker?: (opts: { moduleId: string; lessonId: string }) => void;
   onReorderUnit?: (modId: string, direction: 'up' | 'down', e: React.MouseEvent) => void;
+  onSaveOrder?: () => void;
+  isOrderChanged?: boolean;
   isModuleInSelectedWorld?: (mod: Module) => boolean;
 }
 
