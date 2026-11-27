@@ -25,6 +25,7 @@ import {
   runJobPipeline
 } from "./src/lib/serverLessonPipeline";
 import { generateDirectChikooLesson } from "./src/lib/serverDirectLessonGenerator";
+import { registerCopilotRoutes } from "./src/lib/copilot/server/routes";
 import { generateSitemapXml, generateRobotsTxt, CHIKOO_PLATFORM_SEO } from "./src/lib/seoRegistry";
 import { resolveSeoForPath, injectSeoIntoHtml } from "./src/lib/serverSeo";
 import { redis, CACHE_TTL } from "./src/lib/redis";
@@ -3487,6 +3488,9 @@ Tone Guidelines:
       return res.status(500).json({ success: false, error: err.message || "Upload failed." });
     }
   });
+
+  // AI Copilot v1 (Wave 2): /api/copilot/ask | action | audit (admin only, nothing is saved server-side)
+  registerCopilotRoutes(app, { isAdmin });
 
   // Admin High-Quality TTS Generation Pipeline:
   // Strictly uses the actual screen text approved by admin without AI rewriting.
