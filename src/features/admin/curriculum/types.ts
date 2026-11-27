@@ -51,6 +51,12 @@ export interface OutlineMapProps {
   onExportLessonJson: (les: Lesson) => void;
   triggerNotification: (msg: string, type?: 'success' | 'error' | 'info') => void;
   soundManager: any;
+  onClose?: () => void;
+  onOpenImportModal?: (opts: { level: 'unit' | 'lesson'; unitId?: string; worldId?: string }) => void;
+  onCopyUnitJson?: (mod: Module) => void;
+  onExportUnitJson?: (mod: Module) => void;
+  onReorderUnit?: (modId: string, direction: 'up' | 'down', e: React.MouseEvent) => void;
+  isModuleInSelectedWorld?: (mod: Module) => boolean;
 }
 
 export interface OverviewPanelProps {
@@ -90,6 +96,12 @@ export interface UnitEditorProps {
   onExportLessonJson: (les: Lesson) => void;
   triggerNotification: (msg: string, type?: 'success' | 'error' | 'info') => void;
   soundManager: any;
+  onClose?: () => void;
+  onOpenImportModal?: (opts: { level: 'unit' | 'lesson'; unitId?: string; worldId?: string }) => void;
+  onCopyUnitJson?: (mod: Module) => void;
+  onExportUnitJson?: (mod: Module) => void;
+  onReorderUnit?: (modId: string, direction: 'up' | 'down', e: React.MouseEvent) => void;
+  isModuleInSelectedWorld?: (mod: Module) => boolean;
 }
 
 export interface LessonEditorProps {
@@ -250,6 +262,12 @@ export interface ScreenEditorProps {
   onDeleteChallenge: (id: string) => void;
   triggerNotification: (msg: string, type?: 'success' | 'error' | 'info') => void;
   soundManager: any;
+  onClose?: () => void;
+  onOpenImportModal?: (opts: { level: 'unit' | 'lesson'; unitId?: string; worldId?: string }) => void;
+  onCopyUnitJson?: (mod: Module) => void;
+  onExportUnitJson?: (mod: Module) => void;
+  onReorderUnit?: (modId: string, direction: 'up' | 'down', e: React.MouseEvent) => void;
+  isModuleInSelectedWorld?: (mod: Module) => boolean;
 }
 
 export interface CurriculumStudioProps {

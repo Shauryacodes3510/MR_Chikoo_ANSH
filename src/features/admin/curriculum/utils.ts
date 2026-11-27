@@ -44,3 +44,43 @@ export function cleanEntityForExport(type: 'screen' | 'lesson' | 'unit' | 'world
   }
   return data;
 }
+
+export const getComicValidation = (bodyText: string, mediaUrls: string) => {
+  const dialogues = bodyText ? bodyText.split(',').map(s => s.trim()) : [];
+  const images = mediaUrls ? mediaUrls.split(',').map(s => s.trim()) : [];
+
+  let dialogueStatus = { type: 'success' as 'success' | 'warning' | 'error', message: '' };
+  if (!bodyText) {
+    dialogueStatus = { type: 'error', message: 'Comic Strip Scene requires exactly 3 panels.' };
+  } else if (dialogues.length < 3) {
+    dialogueStatus = { type: 'error', message: `Only ${dialogues.length} panel${dialogues.length > 1 ? 's' : ''} detected. Comic Strip Scene requires exactly 3 panels.` };
+  } else {
+    const emptyIdx = dialogues.findIndex((val, idx) => idx < 3 && val === '');
+    if (emptyIdx !== -1) {
+      dialogueStatus = { type: 'error', message: `Panel ${emptyIdx + 1} dialogue is empty.` };
+    } else if (dialogues.length > 3) {
+      dialogueStatus = { type: 'warning', message: 'Only the first 3 values will be used.' };
+    } else {
+      dialogueStatus = { type: 'success', message: '3 / 3 Panels Ready' };
+    }
+  }
+
+  let imageStatus = { type: 'success' as 'success' | 'warning' | 'error', message: '' };
+  if (!mediaUrls) {
+    imageStatus = { type: 'error', message: 'Comic Strip Scene requires exactly 3 panels.' };
+  } else if (images.length < 3) {
+    imageStatus = { type: 'error', message: `Only ${images.length} panels detected. Comic Strip Scene requires exactly 3 panels.` };
+  } else {
+    const emptyIdx = images.findIndex((val, idx) => idx < 3 && val === '');
+    if (emptyIdx !== -1) {
+      imageStatus = { type: 'error', message: `Panel ${emptyIdx + 1} image missing.` };
+    } else if (images.length > 3) {
+      imageStatus = { type: 'warning', message: 'Only the first 3 values will be used.' };
+    } else {
+      imageStatus = { type: 'success', message: '3 / 3 Panels Ready' };
+    }
+  }
+
+  return { dialogueStatus, imageStatus };
+};
+
