@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AlertCircle, Edit, Eye, Layout, Save, Trash2 } from 'lucide-react';
 import { ScreenEditorProps, ChallengeType } from '../types';
 import { CategoryCForms } from '../../../../components/admin/CategoryCForms';
@@ -133,6 +133,12 @@ export const ScreenEditor: React.FC<ScreenEditorProps> = ({
   } = screenForm;
 
   const currentChallenges = lesson?.challenges || [];
+
+  useEffect(() => {
+    if (!chalId && currentChallenges.length > 0 && module?.id && lesson?.id) {
+      selectChallengeForEditing(module.id, lesson.id, currentChallenges[0]);
+    }
+  }, [chalId, currentChallenges, module?.id, lesson?.id]);
 
   return (
     <div className="bg-white p-6 rounded-3xl border border-slate-200/60 shadow-xs space-y-6">

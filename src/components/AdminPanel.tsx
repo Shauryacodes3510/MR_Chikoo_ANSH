@@ -2827,6 +2827,7 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
 
   // Populates edit forms immediately with challenge properties on select
   const selectChallengeForEditing = (modId: string, lesId: string, chal: Challenge) => {
+    screenHook.selectChallengeForEditing(modId, lesId, chal);
     setSelectedModuleId(modId);
     setSelectedLessonId(lesId);
     setChalId(chal.id);

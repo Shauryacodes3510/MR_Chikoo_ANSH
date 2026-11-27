@@ -197,9 +197,31 @@ export function useScreenForm({
   };
 
   // Build compiled challenge object
+  // Build compiled challenge object
   const buildChallengePayload = (): Challenge => {
     const safeTrim = (val?: string | null) => (typeof val === 'string' ? val.trim() : '');
     const cleanQ = safeTrim(chalQuestion);
+
+    const filteredMcq = chalMcqOptions.map(o => o.trim()).filter(Boolean);
+    const filteredFillBlank = chalFillBlankOptions.map(o => o.trim()).filter(Boolean);
+
+    let finalOptions = chalOptions.filter(Boolean);
+    let finalCorrect = chalCorrectAnswer || chalOptions[0] || '';
+
+    if (
+      chalType === 'tap_right_answer' ||
+      chalType === 'image_reveal' ||
+      chalType === 'c1_multiple_choice' ||
+      chalType === 'c8_tap_correct_object' ||
+      chalType === 'c18_audio_quiz' ||
+      chalType === 'c15_drag_complete_diagram'
+    ) {
+      finalOptions = filteredMcq.length > 0 ? filteredMcq : ['Option A', 'Option B', 'Option C', 'Option D'];
+      finalCorrect = chalMcqCorrect.trim() || finalOptions[0];
+    } else if (chalType === 'fill_in_blank' || chalType === 'c2_fill_in_blank') {
+      finalOptions = filteredFillBlank.length > 0 ? filteredFillBlank : ['Option A', 'Option B'];
+      finalCorrect = chalFillBlankCorrect.trim() || finalOptions[0];
+    }
 
     const base: any = {
       id: chalId || 'temp_preview_id',
@@ -223,23 +245,128 @@ export function useScreenForm({
         }
       },
       xpValue: Number(chalPoints) || 10,
-      options: chalOptions.filter(Boolean),
-      correctAnswer: chalCorrectAnswer || chalOptions[0] || '',
-      imageUrl: chalImage || undefined,
-      conceptPairs: chalConceptPairs.length > 0 ? chalConceptPairs : undefined,
-      bucketCategories: chalBucketCategories.length > 0 ? chalBucketCategories : undefined,
-      bucketItems: chalBucketItems.length > 0 ? chalBucketItems : undefined,
-      timelineSteps: chalTimelineSteps.length > 0 ? chalTimelineSteps : undefined,
-      classifyImages: chalClassifyImages.length > 0 ? chalClassifyImages : undefined,
-      revealClues: chalRevealClues.length > 0 ? chalRevealClues : undefined,
-      revealFinalAnswer: chalRevealFinalAnswer || undefined,
-      storyPanels: chalStoryPanels.length > 0 ? chalStoryPanels : undefined,
-      argumentPremises: chalArgumentPremises.length > 0 ? chalArgumentPremises : undefined,
-      codeSnippet: chalCodeSnippet || undefined,
-      codeLanguage: chalCodeLanguage || undefined,
-      visualAnalogy: chalVisualAnalogy.conceptA ? chalVisualAnalogy : undefined,
-      roleplayCharacter: chalRoleplayCharacter.name ? chalRoleplayCharacter : undefined
+      options: finalOptions,
+      correctAnswer: finalCorrect,
+      imageUrl: chalImageUrl || chalImage || undefined,
+      hint: chalHint || undefined,
+      difficulty: chalDifficulty || undefined,
+      continueText: chalContinueText || undefined,
+      mascotMessage: chalMascotMessage || undefined,
+      explanation_confused: chalExplanationConfused.trim() || undefined,
+      explanation_concept: chalExplanationConcept.trim() || undefined,
+      explanation_example: chalExplanationExample.trim() || undefined,
+      explanation_takeaway: chalExplanationTakeaway.trim() || undefined,
+      explanation_speech_script: chalExplanationSpeechScript.trim() || undefined,
+      explanation_audio_url: explanationAudioUrl || undefined,
+      explanation_audio_duration: Number(explanationAudioDuration) || undefined,
+      explanation_marathi: chalExplanationMarathi.trim() || undefined,
+      explanation_marathi_confused: chalExplanationMarathiConfused.trim() || undefined,
+      explanation_marathi_concept: chalExplanationMarathiConcept.trim() || undefined,
+      explanation_marathi_example: chalExplanationMarathiExample.trim() || undefined,
+      explanation_marathi_takeaway: chalExplanationMarathiTakeaway.trim() || undefined,
+      explanation_marathi_speech_script: chalExplanationMarathiSpeechScript.trim() || undefined,
+      explanation_marathi_audio_url: explanationAudioUrlMarathi.trim() || undefined,
+      explanation_marathi_audio_duration: Number(explanationAudioDurationMarathi) || undefined,
     };
+
+    if (chalType === 'content_screen' || chalType === 'visual_lesson_screen') {
+      const payload = {
+        sceneType: contentSceneType || 'hero',
+        mediaType: contentMediaType || 'image',
+        mediaUrl: contentMediaUrl.trim() || undefined,
+        badge: contentBadge.trim() || undefined,
+        heading: contentHeading.trim() || undefined,
+        subheading: contentSubheading.trim() || undefined,
+        contentBody: contentBody.trim() || chalExplanation.trim() || undefined,
+        highlightBox: contentHighlightBox.trim() || undefined,
+        quote: contentQuote.trim() || undefined,
+        quoteAuthor: contentQuoteAuthor.trim() || undefined,
+        bottomMessage: contentBottomMessage.trim() || undefined
+      };
+      base.contentScreen = payload;
+      base.visualLessonScreen = payload;
+    }
+
+    if (chalType === 'c3_sentence_builder' || chalType === 'build_concept') {
+      base.targetSentence = chalSentenceTarget.trim() || 'AI learns from data.';
+      base.chipsCorrect = chalChipsValue ? chalChipsValue.split(',').map(c => c.trim()).filter(Boolean) : base.targetSentence.split(' ').filter(Boolean);
+      base.chipsDistractor = chalChipsDistractors ? chalChipsDistractors.split(',').map(c => c.trim()).filter(Boolean) : ['engine', 'boiler'];
+    }
+
+    if (chalType === 'c4_concept_matcher' || chalType === 'match_pairs') {
+      base.pairs = chalConceptPairs.filter((p: any) => p.left && p.right);
+      base.conceptPairs = base.pairs;
+    }
+
+    if (chalType === 'c5_bucket_sort' || chalType === 'drag_and_drop') {
+      base.buckets = [
+        { id: 'b1', label: chalDragBucket1 || 'Bucket A' },
+        { id: 'b2', label: chalDragBucket2 || 'Bucket B' }
+      ];
+      base.items = chalBucketSortItems.filter((i: any) => i.text && i.text.trim());
+      base.bucketItems = base.items;
+      base.bucketCategories = [chalDragBucket1, chalDragBucket2];
+    }
+
+    if (chalType === 'c6_timeline_sort' || chalType === 'c7_sequence_builder' || chalType === 'sort_sequence') {
+      base.steps = chalTimelineSteps.filter((s: any) => s.text && s.text.trim());
+      base.correctOrder = base.steps.map((s: any) => s.id);
+      base.timelineSteps = base.steps;
+    }
+
+    if (chalType === 'c8_tap_correct_object') {
+      base.items = chalC8Images;
+    }
+
+    if (chalType === 'c9_true_false') {
+      base.correctAnswer = chalMcqCorrect.trim().toLowerCase() === 'true' ? 'true' : 'false';
+    }
+
+    if (chalType === 'c10_swipe_left_right') {
+      base.correctAnswer = chalMcqCorrect.trim().toLowerCase() === 'left' ? 'left' : 'right';
+      base.options = [chalSwipeLeftLabel.trim() || 'Left', chalSwipeRightLabel.trim() || 'Right'];
+    }
+
+    if (chalType === 'c11_image_classification') {
+      base.buckets = [
+        { id: 'b1', label: chalDragBucket1 || 'Category A' },
+        { id: 'b2', label: chalDragBucket2 || 'Category B' }
+      ];
+      base.items = chalImgClassifyItems.filter((i: any) => i.text && i.text.trim());
+      base.classifyImages = base.items;
+    }
+
+    if (chalType === 'c12_label_diagram') {
+      base.imageUrl = chalImageUrl || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600';
+      base.hotspots = chalC12Hotspots;
+      base.items = chalC12Chips.filter((c: any) => c.text && c.text.trim());
+    }
+
+    if (chalType === 'c13_hotspot_question') {
+      base.imageUrl = chalImageUrl || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600';
+      base.hotspots = chalC13Hotspots;
+    }
+
+    if (chalType === 'c14_memory_flip_cards') {
+      base.cards = chalC14Cards.filter((c: any) => c.front && c.front.trim() && c.back && c.back.trim());
+    }
+
+    if (chalType === 'c15_drag_complete_diagram') {
+      base.steps = chalC15Steps.filter((s: any) => s.text && s.text.trim());
+    }
+
+    if (chalType === 'c16_eliminate_wrong') {
+      base.options = chalC16Options.filter((o: any) => o.text && o.text.trim());
+    }
+
+    if (chalType === 'c17_arrange_images') {
+      base.items = chalC17Items.filter((i: any) => i.imageUrl && i.imageUrl.trim());
+      base.correctOrder = base.items.map((i: any) => i.id);
+    }
+
+    if (chalType === 'c18_audio_quiz') {
+      base.audioUrl = chalAudioUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+    }
 
     return base as Challenge;
   };
@@ -279,30 +406,225 @@ export function useScreenForm({
       }
     }
 
+    if (!text) {
+      text = chal.explanation_speech_script || chal.explanation_concept || '';
+    }
+    if (!audioUrl) {
+      audioUrl = chal.explanation_audio_url || chal.audioUrl || (chal as any).audioNarrations?.hinglish?.url || (chal as any).audioNarrations?.hi?.url || '';
+      audioDuration = chal.explanation_audio_duration || 0;
+    }
+    if (!textMar) {
+      textMar = chal.explanation_marathi_speech_script || chal.explanation_marathi || chal.explanation_marathi_concept || '';
+    }
+    if (!audioUrlMar) {
+      audioUrlMar = chal.explanation_marathi_audio_url || (chal as any).audioNarrations?.marathi?.url || (chal as any).audioNarrations?.mr?.url || '';
+      audioDurationMar = chal.explanation_marathi_audio_duration || 0;
+    }
+
     setChalExplanation(text);
+    setChalExplanationText(text);
     setChalExplanationAudioUrl(audioUrl);
+    setExplanationAudioUrl(audioUrl);
     setChalExplanationAudioDuration(audioDuration);
+    setExplanationAudioDuration(audioDuration);
+
     setChalExplanationMarathi(textMar);
     setExplanationAudioUrlMarathi(audioUrlMar);
     setExplanationAudioDurationMarathi(audioDurationMar);
-    setChalPoints(chal.xpValue || 10);
-    setChalImage(chal.imageUrl || (chal as any).image || '');
-    setChalOptions(chal.options && chal.options.length > 0 ? [...chal.options] : ['', '', '', '']);
-    setChalCorrectAnswer(chal.correctAnswer || (chal.options && chal.options[0]) || '');
 
-    if ((chal as any).conceptPairs) setChalConceptPairs((chal as any).conceptPairs);
-    if ((chal as any).bucketCategories) setChalBucketCategories((chal as any).bucketCategories);
-    if ((chal as any).bucketItems) setChalBucketItems((chal as any).bucketItems);
-    if ((chal as any).timelineSteps) setChalTimelineSteps((chal as any).timelineSteps);
-    if ((chal as any).classifyImages) setChalClassifyImages((chal as any).classifyImages);
-    if ((chal as any).revealClues) setChalRevealClues((chal as any).revealClues);
-    if ((chal as any).revealFinalAnswer) setChalRevealFinalAnswer((chal as any).revealFinalAnswer);
-    if ((chal as any).storyPanels) setChalStoryPanels((chal as any).storyPanels);
-    if ((chal as any).argumentPremises) setChalArgumentPremises((chal as any).argumentPremises);
-    if ((chal as any).codeSnippet) setChalCodeSnippet((chal as any).codeSnippet);
-    if ((chal as any).codeLanguage) setChalCodeLanguage((chal as any).codeLanguage);
-    if ((chal as any).visualAnalogy) setChalVisualAnalogy((chal as any).visualAnalogy);
-    if ((chal as any).roleplayCharacter) setChalRoleplayCharacter((chal as any).roleplayCharacter);
+    setChalPoints(chal.xpValue || 10);
+    setChalXpValue(chal.xpValue || 10);
+
+    // Reset conditional inputs to ensure clean state transitions
+    setChalMcqOptions(['', '', '', '']);
+    setChalMcqCorrect('');
+    setChalC8Images(['', '', '', '']);
+    setChalFillBlankOptions(['', '', '', '']);
+    setChalFillBlankCorrect('');
+    setChalAiTextClue('');
+    setChalAiCardATitle('Card A: Theory');
+    setChalAiCardAText('');
+    setChalAiCardBTitle('Card B: True Science');
+    setChalAiCardBText('');
+    setChalAiCorrectCard('opt_ai');
+    setChalSpotText1('');
+    setChalSpotIsReal1(true);
+    setChalSpotExpl1('');
+    setChalSpotText2('');
+    setChalSpotIsReal2(false);
+    setChalSpotExpl2('');
+    setChalDragBucket1('🪐 Space');
+    setChalDragBucket2('🌿 Earth');
+    setChalDragItem1Text('Evaporating comets');
+    setChalDragItem1Bucket('bucket1');
+    setChalDragItem2Text('Green leaves kitchens');
+    setChalDragItem2Bucket('bucket2');
+    setChalPairLeft1('');
+    setChalPairRight1('');
+    setChalPairLeft2('');
+    setChalPairRight2('');
+    setChalSortStep1('');
+    setChalSortStep2('');
+    setChalSortStep3('');
+    setChalSortStep4('');
+    setChalSentenceTarget('');
+    setChalChipsValue('');
+    setChalChipsDistractors('');
+    setChalImageUrl(chal.imageUrl || (chal as any).image || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&auto=format&fit=crop');
+    setChalImage(chal.imageUrl || (chal as any).image || '');
+
+    // Category C extra resets
+    setChalHint(chal.hint || '');
+    setChalDifficulty((chal.difficulty as any) || 'easy');
+    setChalContinueText(chal.continueText || 'Continue');
+    setChalMascotMessage(chal.mascotMessage || '');
+    setChalExplanationConfused(chal.explanation_confused || '');
+    setChalExplanationConcept(chal.explanation_concept || '');
+    setChalExplanationExample(chal.explanation_example || '');
+    setChalExplanationTakeaway(chal.explanation_takeaway || '');
+    setChalExplanationSpeechScript(chal.explanation_speech_script || '');
+    setChalExplanationMarathiConfused(chal.explanation_marathi_confused || '');
+    setChalExplanationMarathiConcept(chal.explanation_marathi_concept || '');
+    setChalExplanationMarathiExample(chal.explanation_marathi_example || '');
+    setChalExplanationMarathiTakeaway(chal.explanation_marathi_takeaway || '');
+    setChalExplanationMarathiSpeechScript(chal.explanation_marathi_speech_script || '');
+
+    setChalConceptPairs(chal.pairs || (chal as any).conceptPairs || [{ left: 'AI', right: 'Artificial Intelligence' }]);
+    setChalBucketSortItems(chal.items || (chal as any).bucketItems || [{ id: 'i1', text: 'Data', correct_bucket: 'b1' }]);
+    setChalTimelineSteps(chal.steps || (chal as any).timelineSteps || [{ id: 's1', text: 'Step A' }]);
+    setChalAudioUrl(chal.audioUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
+    setChalSwipeLeftLabel((chal.options && chal.options[0]) || 'Left option');
+    setChalSwipeRightLabel((chal.options && chal.options[1]) || 'Right option');
+    setChalImgClassifyItems(chal.items || (chal as any).classifyImages || [
+      { id: 'img1', text: 'Item 1', imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=150', correct_bucket: 'b1' }
+    ]);
+    setChalC12Hotspots(chal.hotspots || [{ id: 'h1', label: 'Spot A', x: 25, y: 35, correct_bucket: 'chip1' }]);
+    setChalC12Chips(chal.items || [{ id: 'chip1', text: 'Sensor' }]);
+    setChalC13Hotspots(chal.hotspots || [{ id: 'hs1', isCorrectSpot: true, x: 50, y: 50, description: 'Engine' }]);
+    setChalC14Cards(chal.cards || [{ id: 'card1', front: 'Term A', back: 'Definition A' }]);
+    setChalC15Steps(chal.steps || [{ id: 'p1', text: 'Step 1' }, { id: 'p2', text: 'Step 2 (Missing)', isMissing: true }]);
+    setChalC16Options(chal.options || [{ id: 'o1', text: 'Option A (Correct)', isCorrect: true }, { id: 'o2', text: 'Option B (Wrong)', isCorrect: false }]);
+    setChalC17Items(chal.items || [{ id: 'img1', imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=150', caption: 'Step 1' }]);
+
+    setContentSceneType('hero');
+    setContentMediaType('image');
+    setContentMediaUrl('');
+    setContentBadge('');
+    setContentHeading('');
+    setContentSubheading('');
+    setContentBody('');
+    setContentHighlightBox('');
+    setContentQuote('');
+    setContentQuoteAuthor('');
+    setContentBottomMessage('');
+
+    // Load options & answers for MCQs
+    if (
+      chal.type === 'tap_right_answer' ||
+      chal.type === 'image_reveal' ||
+      chal.type === 'c1_multiple_choice' ||
+      chal.type === 'c8_tap_correct_object' ||
+      chal.type === 'c18_audio_quiz' ||
+      chal.type === 'c15_drag_complete_diagram'
+    ) {
+      if (chal.options && chal.options.length > 0) {
+        setChalMcqOptions([...chal.options, '', '', '', ''].slice(0, 4));
+        setChalOptions([...chal.options]);
+      }
+      if (chal.correctAnswer) {
+        setChalMcqCorrect(chal.correctAnswer);
+        setChalCorrectAnswer(chal.correctAnswer);
+      }
+      if (chal.imageUrl) setChalImageUrl(chal.imageUrl);
+      if (chal.type === 'c8_tap_correct_object' && chal.items && Array.isArray(chal.items)) {
+        setChalC8Images([...chal.items, '', '', '', ''].slice(0, 4));
+      }
+    }
+
+    if (chal.type === 'fill_in_blank' || chal.type === 'c2_fill_in_blank') {
+      if (chal.options && chal.options.length > 0) {
+        setChalFillBlankOptions([...chal.options, '', '', '', ''].slice(0, 4));
+        setChalOptions([...chal.options]);
+      }
+      if (chal.correctAnswer) {
+        setChalFillBlankCorrect(chal.correctAnswer);
+        setChalCorrectAnswer(chal.correctAnswer);
+      }
+    }
+
+    if (chal.type === 'ai_vs_human') {
+      if (chal.outputs && chal.outputs.length >= 2) {
+        setChalAiCardATitle(chal.outputs[0].title || '');
+        setChalAiCardAText(chal.outputs[0].text || '');
+        setChalAiCardBTitle(chal.outputs[1].title || '');
+        setChalAiCardBText(chal.outputs[1].text || '');
+      }
+      if (chal.correctAnswer) setChalAiCorrectCard(chal.correctAnswer);
+    }
+
+    if (chal.type === 'spot_the_ai') {
+      if (chal.items && chal.items.length >= 2) {
+        setChalSpotText1(chal.items[0].text || '');
+        setChalSpotIsReal1(!!chal.items[0].has_ai);
+        setChalSpotExpl1(chal.items[0].explanation || '');
+        setChalSpotText2(chal.items[1].text || '');
+        setChalSpotIsReal2(!!chal.items[1].has_ai);
+        setChalSpotExpl2(chal.items[1].explanation || '');
+      }
+    }
+
+    if (chal.type === 'drag_and_drop' || chal.type === 'c5_bucket_sort') {
+      if (chal.buckets && chal.buckets.length >= 2) {
+        setChalDragBucket1(chal.buckets[0].label || '');
+        setChalDragBucket2(chal.buckets[1].label || '');
+      }
+      if (chal.items) {
+        setChalBucketSortItems(chal.items);
+      }
+    }
+
+    if (chal.type === 'match_pairs' || chal.type === 'c4_concept_matcher') {
+      if (chal.pairs) setChalConceptPairs(chal.pairs);
+    }
+
+    if (chal.type === 'sort_sequence' || chal.type === 'c6_timeline_sort' || chal.type === 'c7_sequence_builder') {
+      if (chal.steps) setChalTimelineSteps(chal.steps);
+    }
+
+    if (chal.type === 'build_concept' || chal.type === 'c3_sentence_builder') {
+      setChalSentenceTarget(chal.targetSentence || '');
+      if (chal.chipsCorrect) setChalChipsValue(chal.chipsCorrect.join(', '));
+      if (chal.chipsDistractor) setChalChipsDistractors(chal.chipsDistractor.join(', '));
+    }
+
+    if (chal.type === 'content_screen' || chal.type === 'visual_lesson_screen') {
+      const payload = chal.contentScreen || chal.visualLessonScreen;
+      if (payload) {
+        setContentSceneType(payload.sceneType || 'hero');
+        setContentMediaType(payload.mediaType || 'image');
+        setContentMediaUrl(payload.mediaUrl || '');
+        setContentBadge(payload.badge || '');
+        setContentHeading(payload.heading || '');
+        setContentSubheading(payload.subheading || '');
+        setContentBody(payload.contentBody || '');
+        setContentHighlightBox(payload.highlightBox || '');
+        setContentQuote(payload.quote || '');
+        setContentQuoteAuthor(payload.quoteAuthor || '');
+        setContentBottomMessage(payload.bottomMessage || '');
+      }
+    }
+
+    if (chal.type === 'c9_true_false') {
+      setChalMcqCorrect(chal.correctAnswer || 'true');
+    }
+
+    if (chal.type === 'c10_swipe_left_right') {
+      setChalMcqCorrect(chal.correctAnswer || 'left');
+      if (chal.options) {
+        setChalSwipeLeftLabel(chal.options[0] || 'Left option');
+        setChalSwipeRightLabel(chal.options[1] || 'Right option');
+      }
+    }
 
     if (setActiveTab) setActiveTab('challenges');
     if (setMobileViewMode) setMobileViewMode('editor');
