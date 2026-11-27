@@ -22,8 +22,10 @@ export interface UseScreenFormOptions {
   triggerConfirm: (title: string, message: string, onConfirm: () => void) => void;
   soundManager: any;
   setRawJsonText?: (text: string) => void;
-  setActiveTab?: (tab: string) => void;
+  setActiveTab?: (tab: any) => void;
   setMobileViewMode?: (mode: 'map' | 'editor') => void;
+  chalId?: string;
+  setChalId?: (id: string) => void;
 }
 
 export function useScreenForm({
@@ -39,10 +41,14 @@ export function useScreenForm({
   soundManager,
   setRawJsonText,
   setActiveTab,
-  setMobileViewMode
+  setMobileViewMode,
+  chalId: propChalId,
+  setChalId: propSetChalId,
 }: UseScreenFormOptions): ScreenFormStateAndHandlers {
   // Core Challenge State
-  const [chalId, setChalId] = useState('');
+  const [internalChalId, setInternalChalId] = useState('');
+  const chalId = propChalId !== undefined ? propChalId : internalChalId;
+  const setChalId = propSetChalId !== undefined ? propSetChalId : setInternalChalId;
   const [chalType, setChalType] = useState<ChallengeType>('tap_right_answer');
   const [chalQuestion, setChalQuestion] = useState('');
   const [chalExplanation, setChalExplanation] = useState('');
@@ -452,21 +458,114 @@ export function useScreenForm({
 
   // Create Interactive Challenge
   const createInteractiveChallenge = (modId: string, lesId: string, baseType: ChallengeType = 'tap_right_answer') => {
+    const newId = 'step_' + Date.now().toString().slice(-6);
     const baseChallenge: Challenge = {
-      id: 'scr_' + Date.now().toString().slice(-6),
+      id: newId,
       type: baseType,
-      question: 'New Question Stem',
+      question: (baseType === 'content_screen' || baseType === 'visual_lesson_screen') 
+        ? 'Aibo Concept Slide' 
+        : 'Task Question: Which option is correct?',
       explanation: {
-        text: 'Aibo says: Perfect observing logic!',
+        text: 'Aibo says: High performance research complete!',
         audioUrl: '',
         audioDuration: 0,
-        hinglish: { text: 'Aibo says: Perfect observing logic!', audioUrl: '', audioDuration: 0 },
+        hinglish: { text: 'Aibo says: High performance research complete!', audioUrl: '', audioDuration: 0 },
         marathi: { text: '', audioUrl: '', audioDuration: 0 }
       },
-      xpValue: 10,
-      options: ['Option A', 'Option B', 'Option C', 'Option D'],
-      correctAnswer: 'Option A'
+      xpValue: 10
     };
+
+    switch (baseType as string) {
+      case 'tap_right_answer':
+      case 'image_reveal':
+        baseChallenge.options = ['Standard Answer Opt A', 'Mistaken Choice B', 'Alternative Opt C', 'Query Opt D'];
+        baseChallenge.correctAnswer = 'Standard Answer Opt A';
+        if (baseType === 'image_reveal') {
+          baseChallenge.imageUrl = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&auto=format&fit=crop';
+        }
+        break;
+      case 'fill_in_blank':
+        baseChallenge.question = 'Space research uses [BLANK] computing systems.';
+        baseChallenge.options = ['intelligent', 'manual', 'unstable', 'antiquated'];
+        baseChallenge.correctAnswer = 'intelligent';
+        break;
+      case 'ai_vs_human':
+        baseChallenge.outputs = [
+          {
+            id: 'opt_human',
+            title: 'Card A: Science Reality',
+            text: 'Planets orbit following strict gravitational vectors.',
+            authorLabel: 'Physicists Theory',
+            isAI: false,
+            emojis: '🪐✨'
+          },
+          {
+            id: 'opt_ai',
+            title: 'Card B: AI Draft Output',
+            text: 'Stars fly randomly coordinate systems inside standard space loops.',
+            authorLabel: 'Generated GPT Hallucination',
+            isAI: true,
+            emojis: '🤖❗'
+          }
+        ];
+        baseChallenge.correctAnswer = 'opt_ai';
+        break;
+      case 'spot_the_ai':
+        baseChallenge.items = [
+          {
+            id: 'spot_1',
+            text: 'Telescopes resolve far stellar light waves.',
+            has_ai: false,
+            explanation: 'Accurate lens observations.'
+          },
+          {
+            id: 'spot_2',
+            text: 'Artificial engines manufacture gravity fields out of solar rocks.',
+            has_ai: true,
+            explanation: 'Silly computer sci-fi error!'
+          }
+        ];
+        break;
+      case 'drag_and_drop':
+        baseChallenge.buckets = [{ id: 'b1', label: '🪐 Solar Systems' }, { id: 'b2', label: '🌿 Earth Biosphere' }];
+        baseChallenge.items = [
+          { id: 'di1', text: 'Jupiter gas giant', correct_bucket: 'b1' },
+          { id: 'di2', text: 'Amazon Rainforest', correct_bucket: 'b2' },
+          { id: 'di3', text: 'Saturn Ice Rings', correct_bucket: 'b1' }
+        ];
+        break;
+      case 'swipe_sorter':
+        baseChallenge.left_category = '🛸 Extraterrestrial';
+        baseChallenge.right_category = '🌍 Terrestrial';
+        baseChallenge.items = [
+          { id: 'sw1', text: 'Martian Rover Curiosity', correct_direction: 'left' },
+          { id: 'sw2', text: 'Mount Everest Peak', correct_direction: 'right' }
+        ];
+        break;
+      case 'dialogue':
+      case 'story_dialogue':
+        baseChallenge.dialoguePanels = [
+          { speaker: 'Aibo', text: 'Greetings voyager! Ready to explore?', avatar: 'https://images.unsplash.com/photo-1546776310-eef45dd6d63c?w=120&auto=format&fit=crop' },
+          { speaker: 'Student', text: 'Engines armed. Let us launch!', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop' }
+        ];
+        break;
+      case 'bubble_pop':
+        baseChallenge.bubbleTargetPrompt = 'Pop all real cosmic bodies!';
+        baseChallenge.bubbleItems = [
+          { id: 'b1', label: 'Mars', isCorrect: true },
+          { id: 'b2', label: 'Asteroid Belt', isCorrect: true },
+          { id: 'b3', label: 'Krypton', isCorrect: false }
+        ];
+        break;
+      case 'ai_playground':
+        baseChallenge.playgroundMode = 'prompt_experiment';
+        baseChallenge.starterPrompt = 'Explain neural weights simply:';
+        break;
+      default:
+        baseChallenge.options = ['Option A', 'Option B', 'Option C', 'Option D'];
+        baseChallenge.correctAnswer = 'Option A';
+        break;
+    }
 
     const updateLessons = (lessons: Lesson[]) => lessons.map(l => {
       if (l.id === lesId) {

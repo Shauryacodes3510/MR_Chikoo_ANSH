@@ -36,7 +36,7 @@ export interface OutlineMapProps {
   mobileViewMode: MobileViewMode;
   setMobileViewMode: (mode: MobileViewMode) => void;
   activeTab: string;
-  setActiveTab: (tab: string) => void;
+  setActiveTab: (tab: any) => void;
   openLessonMenuId: string | null;
   setOpenLessonMenuId: (id: string | null) => void;
   onSelectModule: (mod: Module) => void;
@@ -170,24 +170,23 @@ export interface PracticeArenaListsProps {
   onReorderUnit?: (modId: string, direction: 'up' | 'down') => void;
   triggerConfirm: (title: string, message: string, onConfirm: () => void) => void;
   soundManager: any;
-  setActiveTab: (tab: string) => void;
+  setActiveTab: (tab: any) => void;
 }
 
 export interface MobileStudioNavProps {
   activeTab: string;
-  setActiveTab: (tab: string) => void;
+  setActiveTab: (tab: any) => void;
   mobileNavTab: string;
-  setMobileNavTab: (tab: any) => void;
-  mobileViewMode: MobileViewMode;
+  setMobileNavTab?: (tab: any) => void;
+  mobileViewMode?: MobileViewMode;
   setMobileViewMode: (mode: MobileViewMode) => void;
   isMobileMoreOpen?: boolean;
   setIsMobileMoreOpen?: (open: boolean) => void;
   currentSelectedModuleObj?: Module;
   currentSelectedLessonObj?: Lesson;
-  chalId?: string;
-  soundManager: any;
   adminWorlds?: World[];
   loadAdminWorlds?: () => void;
+  soundManager?: any;
 }
 
 export interface ScreenFormStateAndHandlers {
@@ -458,15 +457,15 @@ export interface CurriculumStudioProps {
   setPracticeModulesList: React.Dispatch<React.SetStateAction<Module[]>>;
   adminWorlds: World[];
   selectedAdminWorldId: string;
-  setSelectedAdminWorldId: (id: string) => void;
+  setSelectedAdminWorldId?: (id: string) => void;
   activeTab: string;
-  setActiveTab: (tab: string) => void;
-  mobileViewMode: MobileViewMode;
-  setMobileViewMode: (mode: MobileViewMode) => void;
-  mobileNavTab: string;
-  setMobileNavTab: (tab: any) => void;
-  isMobileMoreOpen: boolean;
-  setIsMobileMoreOpen: (open: boolean) => void;
+  setActiveTab: (tab: any) => void;
+  mobileViewMode?: MobileViewMode;
+  setMobileViewMode?: (mode: MobileViewMode) => void;
+  mobileNavTab?: string;
+  setMobileNavTab?: (tab: any) => void;
+  isMobileMoreOpen?: boolean;
+  setIsMobileMoreOpen?: (open: boolean) => void;
   isSupabaseConfigured: boolean;
   triggerNotification: (msg: string, type?: 'success' | 'error' | 'info') => void;
   triggerConfirm: (title: string, message: string, onConfirm: () => void) => void;

@@ -25,8 +25,14 @@ export interface UseCurriculumStudioOptions {
   triggerConfirm: (title: string, message: string, onConfirm: () => void) => void;
   soundManager: any;
   setRawJsonText?: (text: string) => void;
-  setActiveTab?: (tab: string) => void;
+  setActiveTab?: (tab: any) => void;
   setMobileViewMode?: (mode: 'map' | 'editor') => void;
+  selectedModuleId?: string;
+  setSelectedModuleId?: (id: string) => void;
+  selectedLessonId?: string;
+  setSelectedLessonId?: (id: string) => void;
+  isOutlineCollapsed?: boolean;
+  setIsOutlineCollapsed?: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export function useCurriculumStudio({
@@ -40,12 +46,25 @@ export function useCurriculumStudio({
   soundManager,
   setRawJsonText,
   setActiveTab,
-  setMobileViewMode
+  setMobileViewMode,
+  selectedModuleId: propSelectedModuleId,
+  setSelectedModuleId: propSetSelectedModuleId,
+  selectedLessonId: propSelectedLessonId,
+  setSelectedLessonId: propSetSelectedLessonId,
+  isOutlineCollapsed: propIsOutlineCollapsed,
+  setIsOutlineCollapsed: propSetIsOutlineCollapsed,
 }: UseCurriculumStudioOptions) {
   // Navigation & selection
-  const [selectedModuleId, setSelectedModuleId] = useState<string>('');
-  const [selectedLessonId, setSelectedLessonId] = useState<string>('');
-  const [isOutlineCollapsed, setIsOutlineCollapsed] = useState(false);
+  const [internalSelectedModuleId, setInternalSelectedModuleId] = useState<string>('');
+  const [internalSelectedLessonId, setInternalSelectedLessonId] = useState<string>('');
+  const [internalIsOutlineCollapsed, setInternalIsOutlineCollapsed] = useState(false);
+
+  const selectedModuleId = propSelectedModuleId !== undefined ? propSelectedModuleId : internalSelectedModuleId;
+  const setSelectedModuleId = propSetSelectedModuleId !== undefined ? propSetSelectedModuleId : setInternalSelectedModuleId;
+  const selectedLessonId = propSelectedLessonId !== undefined ? propSelectedLessonId : internalSelectedLessonId;
+  const setSelectedLessonId = propSetSelectedLessonId !== undefined ? propSetSelectedLessonId : setInternalSelectedLessonId;
+  const isOutlineCollapsed = propIsOutlineCollapsed !== undefined ? propIsOutlineCollapsed : internalIsOutlineCollapsed;
+  const setIsOutlineCollapsed = propSetIsOutlineCollapsed !== undefined ? propSetIsOutlineCollapsed : setInternalIsOutlineCollapsed;
   const [searchQuery, setSearchQuery] = useState('');
   const [openLessonMenuId, setOpenLessonMenuId] = useState<string | null>(null);
   const [pendingModules, setPendingModules] = useState<Module[]>([]);
@@ -221,7 +240,12 @@ export function useCurriculumStudio({
 
       setModulesList(updatedAi);
       setPracticeModulesList(updatedPrac);
-      await saveCurriculumToStorage(updatedAi, updatedPrac);
+      const isSpace = modulesList.some(m => m.id === selectedModuleId);
+      if (isSpace) {
+        await saveCurriculumToStorage(updatedAi, updatedPrac);
+      } else {
+        await saveCurriculumToStorage(updatedAi, updatedPrac);
+      }
       syncJsonText(updatedAi, updatedPrac);
 
       triggerNotification("Unit Module details updated successfully!", "success");
@@ -403,7 +427,12 @@ export function useCurriculumStudio({
           };
         });
 
-        saveCurriculumToStorage(updatedAi, updatedPrac);
+        const isPractice = practiceModulesList.some(m => m.id === moduleId);
+        if (isPractice) {
+          saveCurriculumToStorage(updatedAi, updatedPrac);
+        } else {
+          saveCurriculumToStorage(updatedAi, updatedPrac);
+        }
         setModulesList(updatedAi);
         setPracticeModulesList(updatedPrac);
         syncJsonText(updatedAi, updatedPrac);
@@ -571,7 +600,11 @@ export function useCurriculumStudio({
 
     setModulesList(updatedAi);
     setPracticeModulesList(updatedPrac);
-    saveCurriculumToStorage(updatedAi, updatedPrac);
+    if (direction === 'up') {
+      saveCurriculumToStorage(updatedAi, updatedPrac);
+    } else {
+      saveCurriculumToStorage(updatedAi, updatedPrac);
+    }
     syncJsonText(updatedAi, updatedPrac);
     triggerNotification("Lesson successfully reordered!", "success");
     soundManager.play('complete');

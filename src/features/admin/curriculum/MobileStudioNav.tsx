@@ -14,8 +14,7 @@ export const MobileStudioNav: React.FC<MobileStudioNavProps> = ({
   if (mobileNavTab !== 'lessons') return null;
 
   return (
-    <div className="md:hidden sticky top-0 z-30 bg-[#f8fafc]/95 backdrop-blur-md pt-1 pb-2">
-      <div className="flex items-center gap-1.5 overflow-x-auto p-1 bg-slate-200/70 rounded-2xl custom-scrollbar-none">
+    <div className="flex items-center gap-1.5 overflow-x-auto p-1 bg-slate-200/70 rounded-2xl custom-scrollbar-none">
         <button
           type="button"
           onClick={() => {
@@ -71,6 +70,5 @@ export const MobileStudioNav: React.FC<MobileStudioNavProps> = ({
           Worlds ({adminWorlds.length || 1})
         </button>
       </div>
-    </div>
-  );
-};
+    );
+  };
