@@ -34,13 +34,7 @@ export const LandingFeatures: React.FC<LandingFeaturesProps> = ({ onGetApp }) =>
     <section id="features" className="py-20 lg:py-32 bg-[#E2F0E5] overflow-hidden">
       <div className="max-w-7xl mx-auto px-6 md:px-12 grid lg:grid-cols-2 gap-16 lg:gap-8 items-center">
         {/* Left Content */}
-        <motion.div
-          initial={{ opacity: 0, y: 50 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.8 }}
-          className="flex flex-col"
-        >
+        <div className="flex flex-col">
           <span className="text-xs font-bold tracking-widest text-blue-600 uppercase mb-4">
             Smart Learning, Anytime
           </span>
@@ -90,16 +84,10 @@ export const LandingFeatures: React.FC<LandingFeaturesProps> = ({ onGetApp }) =>
               </div>
             </button>
           </div>
-        </motion.div>
+        </div>
 
         {/* Right Content (Phones) */}
-        <motion.div
-          initial={{ opacity: 0, x: 50 }}
-          whileInView={{ opacity: 1, x: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-          className="relative h-[480px] sm:h-[580px] flex items-center justify-center lg:justify-end"
-        >
+        <div className="relative h-[480px] sm:h-[580px] flex items-center justify-center lg:justify-end">
           <div className="relative w-full max-w-[580px] h-[480px]">
             {/* Phone 1 (Left) */}
             <motion.div
@@ -137,7 +125,7 @@ export const LandingFeatures: React.FC<LandingFeaturesProps> = ({ onGetApp }) =>
               <img src="/entry 4.png" alt="App Screen" className="w-full h-full object-cover" />
             </motion.div>
           </div>
-        </motion.div>
+        </div>
       </div>
     </section>
   );

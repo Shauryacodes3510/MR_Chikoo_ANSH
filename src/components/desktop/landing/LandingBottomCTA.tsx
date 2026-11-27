@@ -28,24 +28,13 @@ export const LandingBottomCTA: React.FC<LandingBottomCTAProps> = ({ onExplore, o
       <div className="max-w-7xl mx-auto px-6 md:px-12 grid lg:grid-cols-2 gap-12 relative z-10">
         {/* Left Content */}
         <div className="pb-20 lg:pb-32 flex flex-col justify-center">
-          <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-4xl lg:text-5xl font-extrabold text-white mb-6 leading-tight"
-          >
+          <h2 className="text-4xl lg:text-5xl font-extrabold text-white mb-6 leading-tight">
             Start Your AI Learning <br /> Journey Today!
-          </motion.h2>
+          </h2>
 
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.1 }}
-            className="text-blue-100 mb-8 max-w-md text-lg leading-relaxed"
-          >
+          <p className="text-blue-100 mb-8 max-w-md text-lg leading-relaxed">
             Join thousands of students learning smarter with Chikoo - your AI study buddy.
-          </motion.p>
+          </p>
 
           <div className="flex flex-wrap items-center gap-4 mb-8">
             <button
@@ -58,13 +47,7 @@ export const LandingBottomCTA: React.FC<LandingBottomCTAProps> = ({ onExplore, o
           </div>
 
           {/* App Store Buttons */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.2 }}
-            className="flex flex-wrap items-center gap-4"
-          >
+          <div className="flex flex-wrap items-center gap-4">
             <button
               onClick={onGetApp}
               className="flex items-center gap-3 bg-black text-white px-6 py-3 rounded-xl hover:bg-gray-900 transition-all hover:scale-105 active:scale-95 border border-white/10 shadow-xl cursor-pointer"
@@ -87,24 +70,18 @@ export const LandingBottomCTA: React.FC<LandingBottomCTAProps> = ({ onExplore, o
                 <span className="text-base font-bold leading-none">Google Play</span>
               </div>
             </button>
-          </motion.div>
+          </div>
         </div>
 
         {/* Right Side Image */}
         <div className="relative h-full min-h-[380px] flex items-center justify-center lg:justify-end pb-10 lg:pb-0">
-          <motion.div
-            initial={{ opacity: 0, x: 50 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ type: 'spring', stiffness: 100, damping: 15, delay: 0.3 }}
-            className="relative w-[90%] max-w-sm aspect-[4/5] rounded-[2rem] overflow-hidden shadow-2xl ring-8 ring-white/10"
-          >
+          <div className="relative w-[90%] max-w-sm aspect-[4/5] rounded-[2rem] overflow-hidden shadow-2xl ring-8 ring-white/10">
             <img
               src="/download chikoo.png"
               alt="Download Chikoo"
               className="w-full h-full object-cover"
             />
-          </motion.div>
+          </div>
         </div>
       </div>
     </section>

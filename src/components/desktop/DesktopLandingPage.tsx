@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useEffect } from 'react';
 import { LandingNavbar } from './landing/LandingNavbar';
 import { LandingHero } from './landing/LandingHero';
 import { LandingFeatures } from './landing/LandingFeatures';
@@ -24,6 +24,32 @@ export const DesktopLandingPage = memo(function DesktopLandingPage({
   username = 'Explorer',
   onNavigateSeo,
 }: DesktopLandingPageProps) {
+  // Ensure landing page has proper scrolling and light theme while visible
+  useEffect(() => {
+    const htmlEl = document.documentElement;
+    const bodyEl = document.body;
+    const hadDark = htmlEl.classList.contains('dark');
+    if (hadDark) {
+      htmlEl.classList.remove('dark');
+    }
+
+    const prevBodyOverflowY = bodyEl.style.overflowY;
+    const prevHtmlOverflowY = htmlEl.style.overflowY;
+    const prevBodyBg = bodyEl.style.backgroundColor;
+
+    bodyEl.style.overflowY = 'auto';
+    htmlEl.style.overflowY = 'auto';
+    bodyEl.style.backgroundColor = '#FAFAFA';
+
+    return () => {
+      if (hadDark) {
+        htmlEl.classList.add('dark');
+      }
+      bodyEl.style.overflowY = prevBodyOverflowY;
+      htmlEl.style.overflowY = prevHtmlOverflowY;
+      bodyEl.style.backgroundColor = prevBodyBg;
+    };
+  }, []);
 
   const handleGetApp = useCallback(() => {
     try {
@@ -74,7 +100,11 @@ export const DesktopLandingPage = memo(function DesktopLandingPage({
   }, [isAuthenticated, onContinueToApp, onStartAdventure]);
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] text-slate-900 font-sans selection:bg-blue-500/20 overflow-x-hidden">
+    <div
+      id="landing-scroll-container"
+      className="fixed inset-0 w-full h-full bg-[#FAFAFA] text-slate-900 font-sans selection:bg-blue-500/20 overflow-y-auto overflow-x-hidden scroll-smooth z-20"
+      style={{ WebkitOverflowScrolling: 'touch' }}
+    >
       {/* 1. Sticky Navigation Bar */}
       <LandingNavbar
         onExplore={handleExplore}
