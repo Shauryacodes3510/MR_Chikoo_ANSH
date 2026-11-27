@@ -29,6 +29,27 @@ const pick = (src: Record<string, any> | undefined, keys: string[]): Record<stri
   return out;
 };
 
+
+const MAX_STRING = 600;
+const MAX_DEPTH = 6;
+/** Keys never shown to the LLM: audio, hashes, ids of voices, duplicated/mirror blobs. */
+const HIDDEN_KEY = /(^audioNarrations$|audio|hash|voice|ttsModel|^explanation_(?!marathi)|^contentScreen$|^visualLessonScreen$|^updatedAt$|^durationMs$)/i;
+
+/** Copy of a value without hidden keys, long strings cut, depth limited. */
+const sanitize = (v: unknown, depth = 0): unknown => {
+  if (typeof v === 'string') return v.length > MAX_STRING ? v.slice(0, MAX_STRING) + '…' : v;
+  if (v === null || typeof v !== 'object') return v;
+  if (depth >= MAX_DEPTH) return undefined;
+  if (Array.isArray(v)) return v.slice(0, 40).map(x => sanitize(x, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (HIDDEN_KEY.test(k)) continue;
+    const c = sanitize(val, depth + 1);
+    if (c !== undefined && c !== '') out[k] = c;
+  }
+  return out;
+};
+
 export const toAiScreenView = (screen: ScreenLike): AiScreenView => {
   const editable = isEditableType(screen.type);
   const base = { id: screen.id, type: screen.type, editable };
@@ -39,6 +60,8 @@ export const toAiScreenView = (screen: ScreenLike): AiScreenView => {
       ...base,
       ...pick(screen, ['question', 'options', 'mascotMessage', 'xpValue', 'difficulty']),
       correctOptionIndex: idx >= 0 ? idx : null,
+      // Only when the answer could not be matched to an option, so the AI can still see it.
+      ...(idx < 0 && screen.correctAnswer !== undefined ? { rawCorrectAnswer: sanitize(screen.correctAnswer) } : {}),
       explanation: getExplanationText(screen),
     };
   }
@@ -46,8 +69,10 @@ export const toAiScreenView = (screen: ScreenLike): AiScreenView => {
     const cs = isPlainObject(screen.contentScreen) ? screen.contentScreen : screen;
     return { ...base, ...pick(cs, ['heading', 'subheading', 'contentBody', 'badge', 'quote', 'bottomMessage', 'mascotMessage']) };
   }
-  // Other types: read-only hint so Ask can talk about them.
-  return { ...base, ...pick(screen, ['question', 'heading', 'contentBody']) };
+  // Other types: read-only, but the AI gets the real data (options, answers, pairs, ...),
+  // minus audio/hash/mirror fields, so "Ask" can really check them.
+  const { id: _id, type: _type, ...rest } = screen;
+  return { ...base, ...(sanitize(rest) as Record<string, unknown>) };
 };
 
 export interface AiScopeView {

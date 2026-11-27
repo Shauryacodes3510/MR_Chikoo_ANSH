@@ -20,6 +20,22 @@ describe('context (what the LLM sees)', () => {
     expect(JSON.parse(v).correctOptionIndex).toBe(1);
     expect(JSON.parse(v).explanation).toBe('A spam filter learns from examples.');
   });
+  it('other screen types expose real fields (options, answer) but never audio/mirrors', () => {
+    const v = toAiScreenView({
+      id: 'x', type: 'c2_fill_in_blank', sentence: 'AI ___ data', options: ['learns', 'sleeps'], correctAnswer: 'learns',
+      audioNarrations: { en: { url: 'https://cdn/a.mp3', hash: 'h' } }, explanation_audio_url: 'https://cdn/e.mp3',
+      explanation_concept: 'dup', explanation: { text: 'Why', audioUrl: 'https://cdn/z.mp3' },
+    } as any);
+    expect(v.options).toEqual(['learns', 'sleeps']);
+    expect(v.correctAnswer).toBe('learns');
+    expect(v.editable).toBe(false);
+    expect(JSON.stringify(v)).not.toMatch(/cdn\/|hash|audioNarrations|explanation_concept/);
+  });
+  it('MCQ whose answer is not an option text still shows the raw answer', () => {
+    const v: any = toAiScreenView(makeMcq({ correctAnswer: { id: 'b' } }));
+    expect(v.correctOptionIndex).toBeNull();
+    expect(v.rawCorrectAnswer).toEqual({ id: 'b' });
+  });
   it('scope filters to the selection only', () => {
     const r = resolveScope(makeModules(), { kind: 'screen', lessonId: 'lessonA', screenId: 'scr_tf_1' });
     expect(r.modules![0].lessons![0].challenges!.map(c => c.id)).toEqual(['scr_tf_1']);

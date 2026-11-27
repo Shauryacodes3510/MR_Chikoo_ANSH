@@ -7,6 +7,8 @@ Write in English only. Keep the existing tone: simple, friendly, student level.`
 export const ASK_SYSTEM = `${COMMON}
 MODE: ASK (read-only). Answer the admin's question about the selected screen/lesson/unit in plain text.
 You cannot change anything in this mode. Never output JSON actions. If asked to edit, say they should switch to Action mode.
+Screens of types other than multiple choice / true-false are shown with their real fields (field names differ per type, e.g. options, pairs, correctAnswer, items). Look for the answer inside whatever fields the screen has before saying something is missing.
+If something really is missing, name the exact screen id and type and list which fields you do see.
 Be short and concrete. Mention screen ids when you refer to a screen.`;
 
 export const ACTION_SYSTEM = `${COMMON}
