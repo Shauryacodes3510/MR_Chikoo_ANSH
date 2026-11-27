@@ -322,4 +322,27 @@ export interface CurriculumStudioProps {
   triggerConfirm: (title: string, message: string, onConfirm: () => void) => void;
   soundManager: any;
   setRawJsonText?: (text: string) => void;
+  selectedModuleId?: string;
+  setSelectedModuleId?: (id: string) => void;
+  selectedLessonId?: string;
+  setSelectedLessonId?: (id: string) => void;
+  isOutlineCollapsed?: boolean;
+  setIsOutlineCollapsed?: React.Dispatch<React.SetStateAction<boolean>>;
+  editorLayoutMode?: EditorLayoutMode;
+  setEditorLayoutMode?: (m: EditorLayoutMode) => void;
+  isStudentViewMode?: boolean;
+  setIsStudentViewMode?: (v: boolean) => void;
+  screenListViewMode?: ListViewMode;
+  setScreenListViewMode?: (m: ListViewMode) => void;
+  curriculumHook?: any;
+  screenHook?: any;
+  renderChallengePreview?: (c: Challenge) => React.ReactNode;
+  selectedScreenForVoice?: Challenge;
+  onSaveChallenges?: (challenges: Challenge[]) => void;
+  onOpenImportModal?: (opts?: any) => void;
+  onCopyUnitJson?: (mod: Module) => void;
+  onExportUnitJson?: (mod: Module) => void;
+  onCopyWorldJson?: (worldId: string) => void;
+  onExportWorldJson?: (worldId: string) => void;
+  onOpenScreenPicker?: (opts: { moduleId: string; lessonId: string }) => void;
 }
