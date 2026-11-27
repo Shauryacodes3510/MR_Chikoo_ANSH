@@ -230,10 +230,125 @@ export async function saveSingleLesson(moduleId: string, lesson: Lesson): Promis
     window.dispatchEvent(new Event('curriculumChanged'));
   }
 
+  // Update snapshot hash for this lesson
+  lastSyncedLessonHashes.set(
+    updatedLesson.id,
+    computeLessonHash(updatedLesson, moduleId, (updatedLesson as any).order_index ?? 0)
+  );
+
   return updatedLesson;
 }
 
-export function saveCurriculumToStorage(newAi: Module[], newPrac: Module[]) {
+export type CurriculumSyncState = 'idle' | 'saving' | 'saved' | 'error';
+
+export interface CurriculumSyncStatus {
+  state: CurriculumSyncState;
+  message: string;
+  failedIds: string[];
+}
+
+let currentSyncStatus: CurriculumSyncStatus = {
+  state: 'idle',
+  message: '',
+  failedIds: []
+};
+
+type StatusListener = (status: CurriculumSyncStatus) => void;
+const statusListeners = new Set<StatusListener>();
+let savedStatusTimeout: any = null;
+
+export function getCurriculumSyncStatus(): CurriculumSyncStatus {
+  return currentSyncStatus;
+}
+
+export function subscribeCurriculumSyncStatus(cb: StatusListener): () => void {
+  statusListeners.add(cb);
+  cb(currentSyncStatus);
+  return () => {
+    statusListeners.delete(cb);
+  };
+}
+
+function updateSyncStatus(status: CurriculumSyncStatus) {
+  currentSyncStatus = status;
+  if (savedStatusTimeout) {
+    clearTimeout(savedStatusTimeout);
+    savedStatusTimeout = null;
+  }
+  if (status.state === 'saved') {
+    savedStatusTimeout = setTimeout(() => {
+      if (currentSyncStatus.state === 'saved') {
+        updateSyncStatus({ state: 'idle', message: '', failedIds: [] });
+      }
+    }, 4000);
+  }
+  statusListeners.forEach(listener => {
+    try {
+      listener(status);
+    } catch (e) {
+      console.error("Error in curriculum sync status listener:", e);
+    }
+  });
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('curriculumSyncStatus', { detail: status }));
+  }
+}
+
+// Module-level last synced snapshot
+const lastSyncedModuleHashes = new Map<string, string>();
+const lastSyncedLessonHashes = new Map<string, string>();
+let hasInitialDatabaseLoad = false;
+
+export function removeSyncedHash(id: string) {
+  lastSyncedModuleHashes.delete(id);
+  lastSyncedLessonHashes.delete(id);
+}
+
+export function computeModuleHash(m: Module, order: number, isPractice: boolean): string {
+  const lessonIdsOrder = (m.lessons || []).map(l => l.id).join(',');
+  const desc = `${m.difficulty || ''}|lessons:${lessonIdsOrder}`;
+  return JSON.stringify({
+    id: m.id,
+    title: m.title || '',
+    description: desc,
+    order: order,
+    is_practice: isPractice,
+    world_id: m.world_id || null,
+    metadata: m.metadata || null
+  });
+}
+
+export function computeLessonHash(l: Lesson, moduleId: string, orderIndex: number): string {
+  return JSON.stringify({
+    id: l.id,
+    module_id: moduleId,
+    title: l.title || '',
+    description: l.description || '',
+    difficulty: l.difficulty || '',
+    xpReward: l.xpReward ?? 50,
+    challenges: l.challenges || [],
+    order_index: orderIndex
+  });
+}
+
+export async function retryFailedCurriculumSync(): Promise<void> {
+  if (!hasInitialDatabaseLoad || curriculumLoadError) {
+    try {
+      updateSyncStatus({ state: 'saving', message: 'Connecting to database...', failedIds: [] });
+      await syncCurriculumFromDatabase(true);
+    } catch (err: any) {
+      updateSyncStatus({
+        state: 'error',
+        message: 'Database still not reachable. Please refresh and check connection.',
+        failedIds: []
+      });
+      return;
+    }
+  }
+  return saveCurriculumToStorage(AI_CURRICULUM, PRACTICE_CURRICULUM);
+}
+
+export function saveCurriculumToStorage(newAi: Module[], newPrac: Module[]): Promise<void> {
   // Guarantee consistent sort_order and order integers on all modules matching their sequence index
   newAi.forEach((m, idx) => {
     m.sort_order = idx;
@@ -255,123 +370,164 @@ export function saveCurriculumToStorage(newAi: Module[], newPrac: Module[]) {
     window.dispatchEvent(new Event('curriculumChanged'));
   }
 
-  // Always sync updated module ordering to backend & database in background
-  const allModulesPayload = [
-    ...newAi.map((m, idx) => ({
-      id: m.id,
-      title: m.title,
-      description: `${m.difficulty || ''}|lessons:${m.lessons.map(l => l.id).join(',')}`,
-      icon: 'Layers',
-      order: idx,
-      sort_order: idx,
-      is_practice: false,
-      world_id: m.world_id || null,
-      metadata: m.metadata || null
-    })),
-    ...newPrac.map((m, idx) => ({
-      id: m.id,
-      title: m.title,
-      description: `${m.difficulty || ''}|lessons:${m.lessons.map(l => l.id).join(',')}`,
-      icon: 'Layers',
-      order: newAi.length + idx,
-      sort_order: newAi.length + idx,
-      is_practice: true,
-      world_id: m.world_id || null,
-      metadata: m.metadata || null
-    }))
-  ];
-  batchUpdateModules(allModulesPayload as any).catch(err => {
-    console.warn("[Curriculum Storage] Background batch update modules warning:", err);
-  });
-
-  // Sync individual lessons if live connection exists
-  if (isSupabaseConfigured && supabase) {
-    (async () => {
-      try {
-        const currentModIds = new Set<string>();
-        const currentLesIds = new Set<string>();
-
-        let order = 0;
-        // 1. Process regular curriculum
-        for (const m of newAi) {
-          currentModIds.add(m.id);
-          const lessonIdsOrder = m.lessons.map(l => l.id).join(',');
-          await saveCustomModule({
-            id: m.id,
-            title: m.title,
-            description: `${m.difficulty || ''}|lessons:${lessonIdsOrder}`,
-            icon: 'Layers',
-            order: order++,
-            is_practice: false,
-            world_id: m.world_id || null,
-            metadata: m.metadata || null
-          });
-
-          let lessonOrder = 0;
-          for (const l of m.lessons) {
-            currentLesIds.add(l.id);
-            await saveCustomLesson({
-              id: l.id,
-              module_id: m.id,
-              title: l.title,
-              description: l.description,
-              difficulty: l.difficulty,
-              xp_reward: l.xpReward,
-              challenges: l.challenges,
-              order_index: lessonOrder++
-            });
-          }
-        }
-
-        // 2. Process practice curriculum
-        for (const m of newPrac) {
-          currentModIds.add(m.id);
-          const lessonIdsOrder = m.lessons.map(l => l.id).join(',');
-          await saveCustomModule({
-            id: m.id,
-            title: m.title,
-            description: `${m.difficulty || ''}|lessons:${lessonIdsOrder}`,
-            icon: 'Layers',
-            order: order++,
-            is_practice: true,
-            metadata: m.metadata || null
-          });
-
-          let pracLessonOrder = 0;
-          for (const l of m.lessons) {
-            currentLesIds.add(l.id);
-            await saveCustomLesson({
-              id: l.id,
-              module_id: m.id,
-              title: l.title,
-              description: l.description,
-              difficulty: l.difficulty,
-              xp_reward: l.xpReward,
-              challenges: l.challenges,
-              order_index: pracLessonOrder++
-            });
-          }
-        }
-
-        // 3. Clean up deleted units (lessons first, then modules due to foreign key constraints)
-        const dbLes = await getCustomLessons();
-        for (const l of dbLes) {
-          if (!currentLesIds.has(l.id)) {
-            await deleteCustomLesson(l.id);
-          }
-        }
-
-        const dbMods = await getCustomModules();
-        for (const m of dbMods) {
-          if (!currentModIds.has(m.id)) {
-            await deleteCustomModule(m.id);
-          }
-        }
-      } catch (err) {
-        console.error("Database curriculum save exception:", err);
-      }
-    })();
+  // If live database connection is not configured, preserve local save and finish
+  if (!isSupabaseConfigured || !supabase) {
+    updateSyncStatus({ state: 'idle', message: 'Offline mode - changes saved locally', failedIds: [] });
+    return Promise.resolve();
   }
+
+  // If snapshot was never initialized or curriculum had a load error, do NOT write to database
+  if (!hasInitialDatabaseLoad || curriculumLoadError) {
+    const errorMsg = "Database not loaded yet - changes were NOT saved to Supabase. Refresh and try again.";
+    updateSyncStatus({
+      state: 'error',
+      message: errorMsg,
+      failedIds: []
+    });
+    const errPromise = Promise.reject(new Error(errorMsg));
+    errPromise.catch(() => {}); // prevent unhandled rejection if callers do not catch
+    return errPromise;
+  }
+
+  const syncPromise = (async () => {
+    let order = 0;
+    const dirtyModules: Array<{
+      module: Module;
+      order: number;
+      isPractice: boolean;
+      newHash: string;
+      lessonIdsOrder: string;
+    }> = [];
+
+    const dirtyLessons: Array<{
+      lesson: Lesson;
+      moduleId: string;
+      orderIndex: number;
+      newHash: string;
+    }> = [];
+
+    // Check regular curriculum
+    for (const m of newAi) {
+      const currentOrder = order++;
+      const mHash = computeModuleHash(m, currentOrder, false);
+      const lessonIdsOrder = (m.lessons || []).map(l => l.id).join(',');
+      if (lastSyncedModuleHashes.get(m.id) !== mHash) {
+        dirtyModules.push({
+          module: m,
+          order: currentOrder,
+          isPractice: false,
+          newHash: mHash,
+          lessonIdsOrder
+        });
+      }
+
+      let lesOrder = 0;
+      for (const l of (m.lessons || [])) {
+        const currentLesOrder = lesOrder++;
+        const lHash = computeLessonHash(l, m.id, currentLesOrder);
+        if (lastSyncedLessonHashes.get(l.id) !== lHash) {
+          dirtyLessons.push({
+            lesson: l,
+            moduleId: m.id,
+            orderIndex: currentLesOrder,
+            newHash: lHash
+          });
+        }
+      }
+    }
+
+    // Check practice curriculum
+    for (const m of newPrac) {
+      const currentOrder = order++;
+      const mHash = computeModuleHash(m, currentOrder, true);
+      const lessonIdsOrder = (m.lessons || []).map(l => l.id).join(',');
+      if (lastSyncedModuleHashes.get(m.id) !== mHash) {
+        dirtyModules.push({
+          module: m,
+          order: currentOrder,
+          isPractice: true,
+          newHash: mHash,
+          lessonIdsOrder
+        });
+      }
+
+      let lesOrder = 0;
+      for (const l of (m.lessons || [])) {
+        const currentLesOrder = lesOrder++;
+        const lHash = computeLessonHash(l, m.id, currentLesOrder);
+        if (lastSyncedLessonHashes.get(l.id) !== lHash) {
+          dirtyLessons.push({
+            lesson: l,
+            moduleId: m.id,
+            orderIndex: currentLesOrder,
+            newHash: lHash
+          });
+        }
+      }
+    }
+
+    // If no changes compared to last snapshot, mark saved and resolve
+    if (dirtyModules.length === 0 && dirtyLessons.length === 0) {
+      updateSyncStatus({ state: 'saved', message: 'All changes synced', failedIds: [] });
+      return;
+    }
+
+    updateSyncStatus({ state: 'saving', message: 'Saving changes to database...', failedIds: [] });
+
+    const failedIds: string[] = [];
+
+    // 1. Upsert changed modules first (foreign key dependency)
+    for (const item of dirtyModules) {
+      try {
+        await saveCustomModule({
+          id: item.module.id,
+          title: item.module.title,
+          description: `${item.module.difficulty || ''}|lessons:${item.lessonIdsOrder}`,
+          icon: 'Layers',
+          order: item.order,
+          sort_order: item.order,
+          is_practice: item.isPractice,
+          world_id: item.module.world_id || null,
+          metadata: item.module.metadata || null
+        });
+        lastSyncedModuleHashes.set(item.module.id, item.newHash);
+      } catch (modErr) {
+        console.error(`[Curriculum Save] Failed to upsert module ${item.module.id}:`, modErr);
+        failedIds.push(item.module.id);
+      }
+    }
+
+    // 2. Upsert changed lessons next
+    for (const item of dirtyLessons) {
+      try {
+        await saveCustomLesson({
+          id: item.lesson.id,
+          module_id: item.moduleId,
+          title: item.lesson.title,
+          description: item.lesson.description,
+          difficulty: item.lesson.difficulty,
+          xp_reward: item.lesson.xpReward,
+          challenges: item.lesson.challenges,
+          order_index: item.orderIndex
+        });
+        lastSyncedLessonHashes.set(item.lesson.id, item.newHash);
+      } catch (lesErr) {
+        console.error(`[Curriculum Save] Failed to upsert lesson ${item.lesson.id}:`, lesErr);
+        failedIds.push(item.lesson.id);
+      }
+    }
+
+    if (failedIds.length > 0) {
+      const msg = `Save failed for ${failedIds.length} item(s)`;
+      updateSyncStatus({ state: 'error', message: msg, failedIds });
+      throw new Error(msg);
+    } else {
+      updateSyncStatus({ state: 'saved', message: 'Saved successfully', failedIds: [] });
+    }
+  })();
+
+  syncPromise.catch(() => {}); // prevent unhandled rejection if callers do not catch
+  return syncPromise;
 }
 
 export let curriculumLoadError: any = null;
@@ -403,6 +559,29 @@ export async function syncCurriculumFromDatabase(forceFresh = false): Promise<bo
 
       // Succeeded! Reset error.
       curriculumLoadError = null;
+
+      // Populate snapshot hashes from authoritative database load
+      lastSyncedModuleHashes.clear();
+      lastSyncedLessonHashes.clear();
+
+      let modOrder = 0;
+      for (const m of structuredAiModules) {
+        lastSyncedModuleHashes.set(m.id, computeModuleHash(m, modOrder++, false));
+        let lesOrder = 0;
+        for (const l of (m.lessons || [])) {
+          lastSyncedLessonHashes.set(l.id, computeLessonHash(l, m.id, lesOrder++));
+        }
+      }
+
+      for (const m of structuredPracModules) {
+        lastSyncedModuleHashes.set(m.id, computeModuleHash(m, modOrder++, true));
+        let lesOrder = 0;
+        for (const l of (m.lessons || [])) {
+          lastSyncedLessonHashes.set(l.id, computeLessonHash(l, m.id, lesOrder++));
+        }
+      }
+
+      hasInitialDatabaseLoad = true;
 
       // Write locally as cache, splicing arrays reactively
       if (typeof window !== 'undefined') {

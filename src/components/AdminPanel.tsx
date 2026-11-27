@@ -6,12 +6,22 @@ import {
   Wand2, Settings, PlayCircle, Cpu, RefreshCw, CheckCircle2, Trophy, Star, Zap, Search, CornerDownRight, Gift, Edit,
   MoreVertical, Download, Building2, Globe, LayoutGrid, BarChart2, SlidersHorizontal, Users, Smartphone,
   ExternalLink, Compass, ShieldCheck, Palette, Bell, Home, Sliders, Swords, Edit3, Brain, PartyPopper, LogOut, FileCode,
-  FileJson, Volume2
+  FileJson, Volume2, Loader2
 } from 'lucide-react';
 import { getRewards, saveRewards, getRedemptionRequests, saveRedemptionRequests, getRewardsAsync, saveRewardAsync, deleteRewardAsync, getRedemptionRequestsAsync, saveRedemptionRequestAsync, Reward as StoreReward, RedemptionRequest as StoreRedemptionRequest } from '../lib/rewardsStore';
 import { getChallengePacks, getPuzzlePacks, getBattlePools } from '../lib/practiceStoreNew';
 import { Module, Lesson, Challenge, ChallengeType } from '../lib/content';
-import { saveCurriculumToStorage, saveSingleLesson, AI_CURRICULUM, PRACTICE_CURRICULUM } from '../lib/content';
+import { 
+  saveCurriculumToStorage, 
+  saveSingleLesson, 
+  AI_CURRICULUM, 
+  PRACTICE_CURRICULUM,
+  getCurriculumSyncStatus,
+  subscribeCurriculumSyncStatus,
+  retryFailedCurriculumSync,
+  removeSyncedHash,
+  CurriculumSyncStatus
+} from '../lib/content';
 import { soundManager } from '../lib/sounds';
 import PracticeArenaSettings from './PracticeArenaSettings';
 import CelebrationCenter from './CelebrationCenter';
@@ -1470,6 +1480,13 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
   // Curriculum status state
   const [modulesList, setModulesList] = useState<Module[]>([]);
   const [practiceModulesList, setPracticeModulesList] = useState<Module[]>([]);
+  const [curriculumSyncStatus, setCurriculumSyncStatus] = useState<CurriculumSyncStatus>(getCurriculumSyncStatus());
+
+  useEffect(() => {
+    return subscribeCurriculumSyncStatus((status) => {
+      setCurriculumSyncStatus(status);
+    });
+  }, []);
 
   // Custom confirmation modal state to bypass browser default prompt blocks
   const [confirmModal, setConfirmModal] = useState<{
@@ -1719,12 +1736,17 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
 
     setModulesList(updatedAi);
     setPracticeModulesList(updatedPrac);
-    saveCurriculumToStorage(updatedAi, updatedPrac);
+    saveCurriculumToStorage(updatedAi, updatedPrac)
+      .then(() => {
+        triggerNotification(`Duplicated lesson "${lesson.title}" successfully!`, "success");
+        soundManager.play('complete');
+      })
+      .catch((err: any) => {
+        triggerNotification(`Lesson duplicated locally, but database sync failed: ${err.message}`, "error");
+      });
     setRawJsonText(JSON.stringify({ spaceCurriculum: updatedAi, practiceCurriculum: updatedPrac }, null, 2));
     
     selectLessonProperty(moduleId, clonedLesson);
-    triggerNotification(`Duplicated lesson "${lesson.title}" successfully!`, "success");
-    soundManager.play('complete');
   };
 
   const handleValidateAndPreview = (text: string) => {
@@ -2359,7 +2381,7 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
       }));
       setPendingModules(modulesToUpdate);
       setModulesList(modulesToUpdate);
-      saveCurriculumToStorage(modulesToUpdate, practiceModulesList);
+      await saveCurriculumToStorage(modulesToUpdate, practiceModulesList);
       await batchUpdateModules(modulesToUpdate);
       triggerNotification("New unit order saved successfully!", "success");
       soundManager.play('complete');
@@ -3808,7 +3830,7 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
 
       setModulesList(updatedAi);
       setPracticeModulesList(updatedPrac);
-      saveCurriculumToStorage(updatedAi, updatedPrac);
+      await saveCurriculumToStorage(updatedAi, updatedPrac);
       setRawJsonText(JSON.stringify({ spaceCurriculum: updatedAi, practiceCurriculum: updatedPrac }, null, 2));
 
       triggerNotification("Unit Module details updated successfully!", "success");
@@ -4137,17 +4159,71 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
     return base as Challenge;
   };
 
-  const handleRawJsonSave = () => {
+  const handleRawJsonSave = async () => {
     try {
       const parsed = JSON.parse(rawJsonText);
       if (!parsed.spaceCurriculum || !parsed.practiceCurriculum) {
         throw new Error("Must contain both 'spaceCurriculum' and 'practiceCurriculum' fields.");
       }
-      saveCurriculumToStorage(parsed.spaceCurriculum, parsed.practiceCurriculum);
-      setModulesList(parsed.spaceCurriculum);
-      setPracticeModulesList(parsed.practiceCurriculum);
-      triggerNotification("Full curriculum updated from raw JSON!", "success");
-      soundManager.play('complete');
+
+      const incomingModIds = new Set<string>([
+        ...parsed.spaceCurriculum.map((m: any) => m.id),
+        ...parsed.practiceCurriculum.map((m: any) => m.id)
+      ]);
+      const incomingLesIds = new Set<string>();
+      [...parsed.spaceCurriculum, ...parsed.practiceCurriculum].forEach((m: any) => {
+        (m.lessons || []).forEach((l: any) => incomingLesIds.add(l.id));
+      });
+
+      let existingModIds: string[] = [];
+      let existingLesIds: string[] = [];
+      if (isSupabaseConfigured) {
+        try {
+          const [dbMods, dbLes] = await Promise.all([getCustomModules(), getCustomLessons()]);
+          existingModIds = dbMods.map(m => m.id);
+          existingLesIds = dbLes.map(l => l.id);
+        } catch {
+          existingModIds = [...modulesList, ...practiceModulesList].map(m => m.id);
+          existingLesIds = [...modulesList, ...practiceModulesList].flatMap(m => (m.lessons || []).map(l => l.id));
+        }
+      } else {
+        existingModIds = [...modulesList, ...practiceModulesList].map(m => m.id);
+        existingLesIds = [...modulesList, ...practiceModulesList].flatMap(m => (m.lessons || []).map(l => l.id));
+      }
+
+      const modulesToDelete = existingModIds.filter(id => !incomingModIds.has(id));
+      const lessonsToDelete = existingLesIds.filter(id => !incomingLesIds.has(id));
+
+      const executeImport = async () => {
+        try {
+          for (const lesId of lessonsToDelete) {
+            await deleteCustomLesson(lesId).catch(console.warn);
+            removeSyncedHash(lesId);
+          }
+          for (const modId of modulesToDelete) {
+            await deleteCustomModule(modId).catch(console.warn);
+            removeSyncedHash(modId);
+          }
+          await saveCurriculumToStorage(parsed.spaceCurriculum, parsed.practiceCurriculum);
+          setModulesList(parsed.spaceCurriculum);
+          setPracticeModulesList(parsed.practiceCurriculum);
+          triggerNotification("Full curriculum updated from raw JSON!", "success");
+          soundManager.play('complete');
+        } catch (saveErr: any) {
+          triggerNotification("Curriculum saved locally, but database sync failed: " + (saveErr?.message || "Unknown error"), "error");
+          soundManager.play('incorrect');
+        }
+      };
+
+      if (lessonsToDelete.length > 0 || modulesToDelete.length > 0) {
+        triggerConfirm(
+          "Confirm Curriculum Replacement",
+          `These ${lessonsToDelete.length} lessons / ${modulesToDelete.length} units will be permanently deleted from the database. Do you want to proceed?`,
+          executeImport
+        );
+      } else {
+        await executeImport();
+      }
     } catch (err: any) {
       triggerNotification("Bad JSON format: " + err.message, "error");
       soundManager.play('incorrect');
@@ -4184,7 +4260,15 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
       setPracticeModulesList(updatedPrac);
     }
 
-    saveCurriculumToStorage(updatedAi, updatedPrac);
+    saveCurriculumToStorage(updatedAi, updatedPrac)
+      .then(() => {
+        triggerNotification(`Created unit module "${modTitle.trim()}" successfully!`);
+        soundManager.play('complete');
+      })
+      .catch((err: any) => {
+        triggerNotification(`Unit created locally, but database sync failed: ${err.message}`, "error");
+      });
+
     setRawJsonText(JSON.stringify({ spaceCurriculum: updatedAi, practiceCurriculum: updatedPrac }, null, 2));
 
     if (isSupabaseConfigured) {
@@ -4197,9 +4281,6 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
         is_practice: modTargetGroup !== 'space'
       }).catch(console.error);
     }
-
-    triggerNotification(`Created unit module "${modTitle.trim()}" successfully!`);
-    soundManager.play('complete');
     
     // Auto select newly created module
     setSelectedModuleId(newId);
@@ -4232,6 +4313,7 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
         // Call backend API / Supabase cascade delete
         try {
           await deleteCustomModule(id);
+          removeSyncedHash(id);
         } catch (delErr: any) {
           console.warn("Delete module database sync note:", delErr);
         }
@@ -4413,16 +4495,21 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
       });
     }
 
-    saveCurriculumToStorage(updatedAi, updatedPrac);
+    saveCurriculumToStorage(updatedAi, updatedPrac)
+      .then(() => {
+        triggerNotification(`Created lesson "${lesTitle.trim()}" successfully!`);
+        soundManager.play('complete');
+      })
+      .catch((err: any) => {
+        triggerNotification(`Lesson created locally, but database sync failed: ${err.message}`, "error");
+      });
+
     setModulesList(updatedAi);
     setPracticeModulesList(updatedPrac);
     setRawJsonText(JSON.stringify({ spaceCurriculum: updatedAi, practiceCurriculum: updatedPrac }, null, 2));
     
     // Auto select the new lesson
     setSelectedLessonId(finalLesId);
-    
-    triggerNotification(`Created lesson "${lesTitle.trim()}" successfully!`);
-    soundManager.play('complete');
     
     // reset lesson fields
     setLesId('');
@@ -4464,6 +4551,7 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
 
         try {
           await deleteCustomLesson(lessonId);
+          removeSyncedHash(lessonId);
         } catch (delErr: any) {
           console.warn("Delete lesson database sync note:", delErr);
         }
@@ -6847,6 +6935,38 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
               </div>
             </div>
 
+            {/* Real-time Curriculum Save Status Badge */}
+            {curriculumSyncStatus.state !== 'idle' && (
+              <div className="flex items-center gap-2">
+                {curriculumSyncStatus.state === 'saving' && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 shadow-3xs animate-pulse">
+                    <Loader2 size={12} className="animate-spin text-amber-600" />
+                    Saving...
+                  </span>
+                )}
+                {curriculumSyncStatus.state === 'saved' && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-3xs">
+                    <Check size={12} className="text-emerald-600" />
+                    Saved ✓
+                  </span>
+                )}
+                {curriculumSyncStatus.state === 'error' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundManager.play('click');
+                      retryFailedCurriculumSync();
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 shadow-3xs transition cursor-pointer"
+                    title={curriculumSyncStatus.message || "Click to retry saving changes"}
+                  >
+                    <AlertCircle size={12} className="text-rose-600" />
+                    Save failed ✗ (click to retry)
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Context Sub-navigation pills when in Curriculum modes */}
             {['manage', 'modules', 'lessons', 'challenges'].includes(activeTab) && (
               <div className="hidden sm:flex items-center gap-1 p-0.5 bg-slate-100/80 rounded-lg border border-slate-200/60 shrink-0">
@@ -9078,27 +9198,27 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
                     {/* Reset Default course content */}
                     <div className="bg-rose-50/50 p-5 rounded-2xl border border-rose-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-left">
                       <div className="space-y-0.5 font-sans">
-                        <h4 className="text-xs font-black text-rose-900 uppercase">Interactive Courseware Hard Reset</h4>
+                        <h4 className="text-xs font-black text-rose-900 uppercase">Clear Local Cache & Reload</h4>
                         <p className="text-[11px] text-rose-550 leading-snug font-medium">
-                          Completely restore default units config discard all local browser edits.
+                          Discard local browser cache and reload fresh curriculum from database.
                         </p>
                       </div>
                       <button
                         type="button"
                         onClick={() => {
                           triggerConfirm(
-                            "🚨 CRITICAL WARNING!",
-                            "Are you sure you want to reset the entire dynamic curriculum back to factory defaults? This will completely restore pre-configured cosmic space questions and custom additions will be lost.",
+                            "Clear Local Cache & Reload",
+                            "Are you sure you want to clear your local curriculum cache and reload fresh data from the database? This will discard unsaved local edits and fetch the latest live curriculum.",
                             () => {
-                              localStorage.removeItem('AIBO_AI_CURRICULUM');
-                              localStorage.removeItem('AIBO_PRACTICE_CURRICULUM');
+                              localStorage.removeItem('CHIKOO_AI_CURRICULUM');
+                              localStorage.removeItem('CHIKOO_PRACTICE_CURRICULUM');
                               window.location.reload();
                             }
                           );
                         }}
                         className="bg-rose-100 hover:bg-rose-200 text-rose-700 hover:text-rose-900 font-black text-xs px-4 py-2 rounded-xl transition duration-300 cursor-pointer shadow-3xs shrink-0"
                       >
-                        Reset Factory Defaults
+                        Clear local cache & reload from database
                       </button>
                     </div>
                   </div>
@@ -9147,11 +9267,11 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
                   type="button"
                   onClick={() => {
                     triggerConfirm(
-                      "🚨 CRITICAL WARNING!",
-                      "Are you sure you want to reset the entire dynamic curriculum back to factory defaults? This will completely restore pre-configured cosmic space questions and custom additions will be lost.",
+                      "Clear Local Cache & Reload",
+                      "Are you sure you want to clear your local curriculum cache and reload fresh data from the database? This will discard unsaved local edits and fetch the latest live curriculum.",
                       () => {
-                        localStorage.removeItem('AIBO_AI_CURRICULUM');
-                        localStorage.removeItem('AIBO_PRACTICE_CURRICULUM');
+                        localStorage.removeItem('CHIKOO_AI_CURRICULUM');
+                        localStorage.removeItem('CHIKOO_PRACTICE_CURRICULUM');
                         window.location.reload();
                       }
                     );
@@ -9160,8 +9280,8 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
                 >
                   <Trash2 size={14} className="text-amber-500 hover:text-rose-600" />
                   <div>
-                    <div className="font-black truncate">Power Reset Map</div>
-                    <div className="text-[10px] font-normal mt-0.5">Restore original default data</div>
+                    <div className="font-black truncate">Clear Cache & Reload</div>
+                    <div className="text-[10px] font-normal mt-0.5">Reload fresh from database</div>
                   </div>
                 </button>
               </div>
