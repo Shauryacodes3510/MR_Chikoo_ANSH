@@ -139,6 +139,7 @@ export interface LessonEditorProps {
   onToggleChest?: (isChest: boolean) => void;
   onOpenScreenVoice?: (screen: Challenge) => void;
   onOpenExplanationAudio?: (screen: Challenge) => void;
+  chalId?: string;
 }
 
 export interface PracticeArenaListsProps {

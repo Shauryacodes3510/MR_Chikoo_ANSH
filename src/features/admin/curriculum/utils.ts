@@ -2,6 +2,23 @@
  * Utility helpers for Curriculum Studio (export data cleaning, etc.)
  */
 
+export function getChallengeLabel(type: string): string {
+  switch (type) {
+    case 'content_screen': return 'Concept Screen';
+    case 'visual_lesson_screen': return 'Visual Story Screen';
+    case 'tap_right_answer': return 'Multiple Choice Quiz';
+    case 'image_reveal': return 'Image Tap Quiz';
+    case 'fill_in_blank': return 'Fill standard Blank';
+    case 'ai_vs_human': return 'AI Showdown Card';
+    case 'spot_the_ai': return 'AI Error Audit';
+    case 'drag_and_drop': return 'Bucket Sorter';
+    case 'sort_sequence': return 'Timeline Sorter';
+    case 'match_pairs': return 'Concepts Matcher';
+    case 'build_concept': return 'Sentence Builder';
+    default: return 'Interactive Card';
+  }
+}
+
 export function cleanEntityForExport(type: 'screen' | 'lesson' | 'unit' | 'world', data: any): any {
   if (type === 'screen') {
     const { id, created_at, updated_at, createdAt, updatedAt, ...rest } = data;
