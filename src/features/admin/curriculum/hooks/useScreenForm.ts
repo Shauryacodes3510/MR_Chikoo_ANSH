@@ -90,6 +90,100 @@ export function useScreenForm({
   });
   const [isGeneratingChallengeImage, setIsGeneratingChallengeImage] = useState(false);
 
+  // Extended challenge form states from AdminPanel
+  const [chalMcqOptions, setChalMcqOptions] = useState<string[]>(['', '', '', '']);
+  const [chalMcqCorrect, setChalMcqCorrect] = useState<string>('');
+  const [chalFillBlankOptions, setChalFillBlankOptions] = useState<string[]>(['', '', '', '']);
+  const [chalFillBlankCorrect, setChalFillBlankCorrect] = useState<string>('');
+  const [chalAiTextClue, setChalAiTextClue] = useState('');
+  const [chalAiCardATitle, setChalAiCardATitle] = useState('Card A: Theory');
+  const [chalAiCardAText, setChalAiCardAText] = useState('');
+  const [chalAiCardBTitle, setChalAiCardBTitle] = useState('Card B: True Science');
+  const [chalAiCardBText, setChalAiCardBText] = useState('');
+  const [chalAiCorrectCard, setChalAiCorrectCard] = useState<string>('opt_ai');
+  const [chalSpotText1, setChalSpotText1] = useState('');
+  const [chalSpotIsReal1, setChalSpotIsReal1] = useState(true);
+  const [chalSpotExpl1, setChalSpotExpl1] = useState('');
+  const [chalSpotText2, setChalSpotText2] = useState('');
+  const [chalSpotIsReal2, setChalSpotIsReal2] = useState(false);
+  const [chalSpotExpl2, setChalSpotExpl2] = useState('');
+  const [chalDragBucket1, setChalDragBucket1] = useState('🪐 Space');
+  const [chalDragBucket2, setChalDragBucket2] = useState('🌿 Earth');
+  const [chalDragItem1Text, setChalDragItem1Text] = useState('Evaporating comets');
+  const [chalDragItem1Bucket, setChalDragItem1Bucket] = useState('bucket1');
+  const [chalDragItem2Text, setChalDragItem2Text] = useState('Green leaves kitchens');
+  const [chalDragItem2Bucket, setChalDragItem2Bucket] = useState('bucket2');
+  const [chalPairLeft1, setChalPairLeft1] = useState('');
+  const [chalPairRight1, setChalPairRight1] = useState('');
+  const [chalPairLeft2, setChalPairLeft2] = useState('');
+  const [chalPairRight2, setChalPairRight2] = useState('');
+  const [chalSortStep1, setChalSortStep1] = useState('');
+  const [chalSortStep2, setChalSortStep2] = useState('');
+  const [chalSortStep3, setChalSortStep3] = useState('');
+  const [chalSortStep4, setChalSortStep4] = useState('');
+  const [chalSentenceTarget, setChalSentenceTarget] = useState('');
+  const [chalChipsValue, setChalChipsValue] = useState('');
+  const [chalChipsDistractors, setChalChipsDistractors] = useState('');
+  const [chalImageUrl, setChalImageUrl] = useState('https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&auto=format&fit=crop');
+  const [chalHint, setChalHint] = useState('');
+  const [chalDifficulty, setChalDifficulty] = useState<'easy' | 'medium' | 'hard'>('easy');
+  const [chalContinueText, setChalContinueText] = useState('Continue');
+  const [chalMascotMessage, setChalMascotMessage] = useState('');
+  const [chalBucketSortItems, setChalBucketSortItems] = useState<any[]>([{ id: 'i1', text: 'Data', correct_bucket: 'b1' }]);
+  const [chalAudioUrl, setChalAudioUrl] = useState('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
+  const [chalSwipeLeftLabel, setChalSwipeLeftLabel] = useState('Left option');
+  const [chalSwipeRightLabel, setChalSwipeRightLabel] = useState('Right option');
+  const [chalImgClassifyItems, setChalImgClassifyItems] = useState<any[]>([
+    { id: 'img1', text: 'Item 1', imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=150', correct_bucket: 'b1' }
+  ]);
+  const [chalC12Hotspots, setChalC12Hotspots] = useState<any[]>([
+    { id: 'h1', label: 'Spot A', x: 25, y: 35, correct_bucket: 'chip1' }
+  ]);
+  const [chalC12Chips, setChalC12Chips] = useState<any[]>([
+    { id: 'chip1', text: 'Sensor' }
+  ]);
+  const [chalC13Hotspots, setChalC13Hotspots] = useState<any[]>([
+    { id: 'hs1', isCorrectSpot: true, x: 50, y: 50, description: 'Engine' }
+  ]);
+  const [chalC14Cards, setChalC14Cards] = useState<any[]>([
+    { id: 'card1', front: 'Term A', back: 'Definition A' }
+  ]);
+  const [chalC15Steps, setChalC15Steps] = useState<any[]>([
+    { id: 'p1', text: 'Step 1' },
+    { id: 'p2', text: 'Step 2 (Missing)', isMissing: true }
+  ]);
+  const [chalC16Options, setChalC16Options] = useState<any[]>([
+    { id: 'o1', text: 'Option A (Correct)', isCorrect: true },
+    { id: 'o2', text: 'Option B (Wrong)', isCorrect: false }
+  ]);
+  const [chalC17Items, setChalC17Items] = useState<any[]>([
+    { id: 'img1', imageUrl: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=150', caption: 'Step 1' }
+  ]);
+  const [chalC8Images, setChalC8Images] = useState<string[]>(['', '', '', '']);
+  const [contentSceneType, setContentSceneType] = useState<string>('hero');
+  const [contentMediaType, setContentMediaType] = useState<'image' | 'gif' | 'video'>('image');
+  const [contentMediaUrl, setContentMediaUrl] = useState('');
+  const [contentBadge, setContentBadge] = useState('');
+  const [contentHeading, setContentHeading] = useState('');
+  const [contentSubheading, setContentSubheading] = useState('');
+  const [contentBody, setContentBody] = useState('');
+  const [contentHighlightBox, setContentHighlightBox] = useState('');
+  const [contentQuote, setContentQuote] = useState('');
+  const [contentQuoteAuthor, setContentQuoteAuthor] = useState('');
+  const [contentBottomMessage, setContentBottomMessage] = useState('');
+  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [imageGenerationError, setImageGenerationError] = useState<string | null>(null);
+  const [imageGenerationSuccess, setImageGenerationSuccess] = useState<boolean>(false);
+  const [generationAspectRatio, setGenerationAspectRatio] = useState<string>('4:3');
+  const [chalXpValue, setChalXpValue] = useState<number>(10);
+  const [chalExplanationConfused, setChalExplanationConfused] = useState('');
+  const [chalExplanationConcept, setChalExplanationConcept] = useState('');
+  const [chalExplanationExample, setChalExplanationExample] = useState('');
+  const [chalExplanationTakeaway, setChalExplanationTakeaway] = useState('');
+  const [chalExplanationSpeechScript, setChalExplanationSpeechScript] = useState('');
+  const [explanationAudioUrl, setExplanationAudioUrl] = useState('');
+  const [explanationAudioDuration, setExplanationAudioDuration] = useState(0);
+
   const syncJsonText = (ai: Module[], prac: Module[]) => {
     if (setRawJsonText) {
       setRawJsonText(JSON.stringify({ spaceCurriculum: ai, practiceCurriculum: prac }, null, 2));
@@ -516,6 +610,154 @@ export function useScreenForm({
     reorderChallenge,
     createInteractiveChallenge,
     handleGenerateChallengeImage,
-    buildChallengePayload
+    buildChallengePayload,
+    chalMcqOptions,
+    setChalMcqOptions,
+    chalMcqCorrect,
+    setChalMcqCorrect,
+    chalFillBlankOptions,
+    setChalFillBlankOptions,
+    chalFillBlankCorrect,
+    setChalFillBlankCorrect,
+    chalAiTextClue,
+    setChalAiTextClue,
+    chalAiCardATitle,
+    setChalAiCardATitle,
+    chalAiCardAText,
+    setChalAiCardAText,
+    chalAiCardBTitle,
+    setChalAiCardBTitle,
+    chalAiCardBText,
+    setChalAiCardBText,
+    chalAiCorrectCard,
+    setChalAiCorrectCard,
+    chalSpotText1,
+    setChalSpotText1,
+    chalSpotIsReal1,
+    setChalSpotIsReal1,
+    chalSpotExpl1,
+    setChalSpotExpl1,
+    chalSpotText2,
+    setChalSpotText2,
+    chalSpotIsReal2,
+    setChalSpotIsReal2,
+    chalSpotExpl2,
+    setChalSpotExpl2,
+    chalDragBucket1,
+    setChalDragBucket1,
+    chalDragBucket2,
+    setChalDragBucket2,
+    chalDragItem1Text,
+    setChalDragItem1Text,
+    chalDragItem1Bucket,
+    setChalDragItem1Bucket,
+    chalDragItem2Text,
+    setChalDragItem2Text,
+    chalDragItem2Bucket,
+    setChalDragItem2Bucket,
+    chalPairLeft1,
+    setChalPairLeft1,
+    chalPairRight1,
+    setChalPairRight1,
+    chalPairLeft2,
+    setChalPairLeft2,
+    chalPairRight2,
+    setChalPairRight2,
+    chalSortStep1,
+    setChalSortStep1,
+    chalSortStep2,
+    setChalSortStep2,
+    chalSortStep3,
+    setChalSortStep3,
+    chalSortStep4,
+    setChalSortStep4,
+    chalSentenceTarget,
+    setChalSentenceTarget,
+    chalChipsValue,
+    setChalChipsValue,
+    chalChipsDistractors,
+    setChalChipsDistractors,
+    chalImageUrl,
+    setChalImageUrl,
+    chalHint,
+    setChalHint,
+    chalDifficulty,
+    setChalDifficulty,
+    chalContinueText,
+    setChalContinueText,
+    chalMascotMessage,
+    setChalMascotMessage,
+    chalBucketSortItems,
+    setChalBucketSortItems,
+    chalAudioUrl,
+    setChalAudioUrl,
+    chalSwipeLeftLabel,
+    setChalSwipeLeftLabel,
+    chalSwipeRightLabel,
+    setChalSwipeRightLabel,
+    chalImgClassifyItems,
+    setChalImgClassifyItems,
+    chalC12Hotspots,
+    setChalC12Hotspots,
+    chalC12Chips,
+    setChalC12Chips,
+    chalC13Hotspots,
+    setChalC13Hotspots,
+    chalC14Cards,
+    setChalC14Cards,
+    chalC15Steps,
+    setChalC15Steps,
+    chalC16Options,
+    setChalC16Options,
+    chalC17Items,
+    setChalC17Items,
+    chalC8Images,
+    setChalC8Images,
+    contentSceneType,
+    setContentSceneType,
+    contentMediaType,
+    setContentMediaType,
+    contentMediaUrl,
+    setContentMediaUrl,
+    contentBadge,
+    setContentBadge,
+    contentHeading,
+    setContentHeading,
+    contentSubheading,
+    setContentSubheading,
+    contentBody,
+    setContentBody,
+    contentHighlightBox,
+    setContentHighlightBox,
+    contentQuote,
+    setContentQuote,
+    contentQuoteAuthor,
+    setContentQuoteAuthor,
+    contentBottomMessage,
+    setContentBottomMessage,
+    isGeneratingImage,
+    setIsGeneratingImage,
+    imageGenerationError,
+    setImageGenerationError,
+    imageGenerationSuccess,
+    setImageGenerationSuccess,
+    generationAspectRatio,
+    setGenerationAspectRatio,
+    chalXpValue,
+    setChalXpValue,
+    chalExplanationConfused,
+    setChalExplanationConfused,
+    chalExplanationConcept,
+    setChalExplanationConcept,
+    chalExplanationExample,
+    setChalExplanationExample,
+    chalExplanationTakeaway,
+    setChalExplanationTakeaway,
+    chalExplanationSpeechScript,
+    setChalExplanationSpeechScript,
+    explanationAudioUrl,
+    setExplanationAudioUrl,
+    explanationAudioDuration,
+    setExplanationAudioDuration
   };
 }
