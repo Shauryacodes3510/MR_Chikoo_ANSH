@@ -149,6 +149,7 @@ export interface PracticeArenaListsProps {
   onSelectLesson: (modId: string, les: Lesson) => void;
   onDeleteModule: (modId: string, e?: React.MouseEvent) => void;
   onDeleteLesson: (modId: string, lesId: string, e?: React.MouseEvent) => void;
+  onDeleteChallenge?: (modId: string, lesId: string, chalId: string) => void;
   onAddUnitInstantly: () => void;
   onAddLessonInstantly: (modId: string) => void;
   onReorderUnit: (modId: string, direction: 'up' | 'down') => void;
