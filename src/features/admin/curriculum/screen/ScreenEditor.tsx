@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { AlertCircle, Edit, Eye, Layout, Save, Trash2 } from 'lucide-react';
 import { ScreenEditorProps, ChallengeType } from '../types';
-import { CategoryCForms } from '../../../components/admin/CategoryCForms';
-import { ScreenVoiceSection } from '../../../components/admin/ScreenVoiceSection';
+import { CategoryCForms } from '../../../../components/admin/CategoryCForms';
+import { ScreenVoiceSection } from '../../../../components/admin/ScreenVoiceSection';
 import { MultipleChoiceScreen } from './MultipleChoiceScreen';
 import { PairsBucketTimelineScreen } from './PairsBucketTimelineScreen';
 import { DialogueStoryScreen } from './DialogueStoryScreen';
