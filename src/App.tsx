@@ -2875,37 +2875,74 @@ function AppContent() {
   // =========================================================================
   // DESKTOP-FIRST ENTRY & PLATFORM ROUTING
   // -------------------------------------------------------------------------
-  // Mobile users are untouched: they enter the existing mobile app directly.
-  // Desktop users experience:
-  //   / or /landing -> Desktop Landing Page
-  //   /login        -> Desktop Auth (login mode) with "Back to Chikoo"
-  //   /signup       -> Desktop Auth (signup mode) with "Back to Chikoo"
-  //   /app          -> Full Desktop Learning Universe (or Auth if logged out)
+  // Routing specification:
+  // 1. /landing or /home -> New Chikoo Landing Page (Navbar, Hero, Features, etc.)
+  // 2. learn.mrchikoo.com (or App Portal):
+  //    - If user cache exists in localStorage: Loading screen -> App opens directly!
+  //    - If no cache exists: Redirects to Sign In (AuthScreen in login mode)
   // =========================================================================
   const cleanPath = currentPath.toLowerCase().split('?')[0].replace(/\/+$/, '') || '/';
 
+  const isLearnDomain = typeof window !== 'undefined' && (
+    window.location.hostname === 'learn.mrchikoo.com' ||
+    window.location.hostname.startsWith('learn.')
+  );
+
+  const hasLocalUserCache = useMemo(() => {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return false;
+    try {
+      if (sessionUser && sessionUser.trim().length > 0) return true;
+      const savedUser = localStorage.getItem('CHIKOO_SESSION_USER');
+      if (savedUser && savedUser.trim().length > 0) return true;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (k.startsWith('sb-') && k.endsWith('-auth-token')) {
+          const val = localStorage.getItem(k);
+          if (val && val.includes('access_token')) return true;
+        }
+        if (k.startsWith('chikoo_onboarding_completed_') || k.startsWith('CHIKOO_LESSON_PROGRESS_')) {
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }, [sessionUser]);
+
   const isLandingRoute = cleanPath === '/landing' || cleanPath === '/home';
-  if ((isDesktop || isLandingRoute) && (cleanPath === '/' || isLandingRoute)) {
+  const shouldShowLandingPage = isLandingRoute || (isDesktop && cleanPath === '/' && !isLearnDomain && !hasLocalUserCache);
+
+  if (shouldShowLandingPage) {
     return (
       <ErrorBoundary>
         <Suspense fallback={<div className="fixed inset-0 w-full h-full bg-[#FCFDFE]" />}>
           <DesktopLandingPage
             onStartAdventure={() => {
-              if (!showAuthView) {
-                navigateTo('/app');
+              if (isLearnDomain) {
+                if (!showAuthView && hasLocalUserCache) {
+                  navigateTo('/app');
+                } else {
+                  navigateTo('/login');
+                }
               } else {
-                navigateTo('/signup');
+                window.location.href = 'https://learn.mrchikoo.com';
               }
             }}
             onSignIn={() => {
-              if (!showAuthView) {
-                navigateTo('/app');
-              } else {
+              if (isLearnDomain) {
                 navigateTo('/login');
+              } else {
+                window.location.href = 'https://learn.mrchikoo.com';
               }
             }}
-            onContinueToApp={() => navigateTo('/app')}
-            isAuthenticated={!showAuthView && !isCheckingUserStatus}
+            onContinueToApp={() => {
+              if (isLearnDomain) {
+                navigateTo('/app');
+              } else {
+                window.location.href = 'https://learn.mrchikoo.com';
+              }
+            }}
+            isAuthenticated={!showAuthView && !isCheckingUserStatus && !!sessionUser}
             username={username || sessionUser || 'Explorer'}
             onNavigateSeo={(path) => navigateTo(path)}
           />
@@ -2915,14 +2952,14 @@ function AppContent() {
   }
 
   if (isDesktop && (cleanPath === '/login' || cleanPath === '/signup')) {
-    if (isCheckingUserStatus) {
+    if (isRestoringSession || isCheckingUserStatus) {
       return (
         <ErrorBoundary>
           <ChikooReachingLoader fullScreen={true} />
         </ErrorBoundary>
       );
     }
-    if (!showAuthView) {
+    if (!showAuthView && hasLocalUserCache) {
       navigateTo('/app');
     } else {
       return (
@@ -2936,7 +2973,7 @@ function AppContent() {
                   navigateTo('/app');
                 }} 
                 onboardingEmail={sessionUser || undefined}
-                onBackToLanding={() => navigateTo('/')}
+                onBackToLanding={() => navigateTo('/landing')}
               />
             </Suspense>
           </div>
@@ -2945,27 +2982,27 @@ function AppContent() {
     }
   }
 
-  if (isDesktop && (cleanPath === '/app' || cleanPath.startsWith('/app'))) {
-    if (isCheckingUserStatus) {
+  if (isDesktop && (cleanPath === '/' || cleanPath === '/app' || cleanPath.startsWith('/app'))) {
+    if (isRestoringSession || isCheckingUserStatus) {
       return (
         <ErrorBoundary>
           <ChikooReachingLoader fullScreen={true} />
         </ErrorBoundary>
       );
     }
-    if (showAuthView) {
+    if (showAuthView || !hasLocalUserCache) {
       return (
         <ErrorBoundary>
           <div className="fixed inset-0 w-full h-full bg-slate-900 overflow-y-auto">
             <Suspense fallback={<div className="fixed inset-0 bg-slate-950" />}>
               <AuthScreen 
-                initialMode="signup"
+                initialMode="login"
                 onLoginSuccess={(email, isNew) => {
                   handleLoginSuccess(email, isNew);
                   navigateTo('/app');
                 }} 
                 onboardingEmail={sessionUser || undefined}
-                onBackToLanding={() => navigateTo('/')}
+                onBackToLanding={() => navigateTo('/landing')}
               />
             </Suspense>
           </div>

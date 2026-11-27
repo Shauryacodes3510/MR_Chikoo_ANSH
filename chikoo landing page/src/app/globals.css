@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-quicksand), ui-sans-serif, system-ui, sans-serif;
+
+  --color-chikoo-blue: #3B82F6;
+  --color-chikoo-dark: #1E293B;
+  --color-chikoo-blue-dark: #1D4ED8;
+  --color-chikoo-blue-deep: #1E3A8A;
+  --color-chikoo-light: #F8FAFC;
+  --color-chikoo-border: #E2E8F0;
+
+  --color-aibo-blue: #3B82F6;
+  --color-aibo-dark: #1E293B;
+  --color-aibo-blue-dark: #1D4ED8;
+  --color-aibo-blue-deep: #1E3A8A;
+  --color-aibo-light: #F8FAFC;
+  --color-aibo-border: #E2E8F0;
+
+  --color-background: #FAFAFA;
+  --color-foreground: #0F172A;
+
+  --animate-blob: blob 7s infinite;
+  --animate-delay-2000: 2s;
+}
+
+@keyframes blob {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+@layer utilities {
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}

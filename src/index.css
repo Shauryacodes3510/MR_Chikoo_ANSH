@@ -5,6 +5,13 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Nunito", sans-serif;
 
+  --color-chikoo-blue: #3B82F6;
+  --color-chikoo-dark: #1E293B;
+  --color-chikoo-blue-dark: #1D4ED8;
+  --color-chikoo-blue-deep: #1E3A8A;
+  --color-chikoo-light: #F8FAFC;
+  --color-chikoo-border: #E2E8F0;
+
   --color-chikoo-blue-50: var(--theme-secondary, #e3f2fd);
   --color-chikoo-blue-100: #bbdefb;
   --color-chikoo-blue-200: #90caf9;
