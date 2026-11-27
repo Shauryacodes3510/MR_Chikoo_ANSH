@@ -118,6 +118,7 @@ import LearningPathBuilder from './LearningPathBuilder';
 import { AILessonGenerator } from './admin/AILessonGenerator';
 import BulkNarrationQueue from './admin/BulkNarrationQueue';
 import ExplanationAudioManager from './admin/ExplanationAudioManager';
+import { mapScreenDataForImport } from '../lib/curriculumNormalize';
 
 const getComicValidation = (bodyText: string, mediaUrls: string) => {
   const dialogues = bodyText ? bodyText.split(',').map(s => s.trim()) : [];
@@ -1753,56 +1754,6 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
       setImportValidationErrors([`Malformed JSON: ${e.message}`]);
       setImportPreviewData(null);
     }
-  };
-
-  const mapUserFriendlyScreenType = (type: string): string => {
-    const mapping: Record<string, string> = {
-      'concept': 'content_screen',
-      'story': 'visual_lesson_screen',
-      'mcq': 'tap_right_answer',
-      'fill_blank': 'fill_in_blank',
-      'sentence_builder': 'build_concept',
-      'sorting': 'sort_sequence',
-      'discard': 'c16_eliminate_wrong',
-      'match_pair': 'match_pairs',
-      'drag_drop': 'drag_and_drop',
-      'image_choice': 'image_reveal',
-      'reward': 'content_screen'
-    };
-    return mapping[type] || type;
-  };
-
-  const mapScreenDataForImport = (screen: any): any => {
-    if (!screen || !screen.type) return screen;
-    const mappedType = mapUserFriendlyScreenType(screen.type);
-    
-    const mapped: any = {
-      ...screen,
-      type: mappedType
-    };
-
-    if (mappedType === 'visual_lesson_screen' || mappedType === 'content_screen') {
-      const hasNested = screen.visualLessonScreen || screen.contentScreen;
-      if (!hasNested) {
-        const nestedData = {
-          badge: screen.badge || (mappedType === 'visual_lesson_screen' ? '🎬 Visual Story' : '🖼️ Concept'),
-          heading: screen.heading || screen.question || '',
-          subheading: screen.subheading || '',
-          contentBody: screen.contentBody || screen.description || '',
-          mediaUrl: screen.mediaUrl || screen.image || screen.imageUrl || '',
-          highlightBox: screen.highlightBox || '',
-          quote: screen.quote || '',
-          quoteAuthor: screen.quoteAuthor || '',
-          bottomMessage: screen.bottomMessage || ''
-        };
-        if (mappedType === 'visual_lesson_screen') {
-          mapped.visualLessonScreen = nestedData;
-        } else {
-          mapped.contentScreen = nestedData;
-        }
-      }
-    }
-    return mapped;
   };
 
   const handleImportJson = () => {
