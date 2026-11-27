@@ -260,6 +260,11 @@ export interface ScreenEditorProps {
   isStudentViewMode: boolean;
   setIsStudentViewMode: (v: boolean) => void;
   screenForm: ScreenFormStateAndHandlers;
+  renderChallengePreview?: (compiledChallenge: Challenge) => React.ReactNode;
+  selectedScreenForVoice?: Challenge;
+  onSaveChallenges?: (challenges: Challenge[]) => void;
+  screenListViewMode?: ListViewMode;
+  setScreenListViewMode?: (mode: ListViewMode) => void;
   onBackToLesson: () => void;
   onDeleteChallenge: (id: string) => void;
   triggerNotification: (msg: string, type?: 'success' | 'error' | 'info') => void;
