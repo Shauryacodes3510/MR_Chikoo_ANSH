@@ -6,7 +6,7 @@ import {
   Wand2, Settings, PlayCircle, Cpu, RefreshCw, CheckCircle2, Trophy, Star, Zap, Search, CornerDownRight, Gift, Edit,
   MoreVertical, Download, Building2, Globe, LayoutGrid, BarChart2, SlidersHorizontal, Users, Smartphone,
   ExternalLink, Compass, ShieldCheck, Palette, Bell, Home, Sliders, Swords, Edit3, Brain, PartyPopper, LogOut, FileCode,
-  FileJson, Volume2, Loader2
+  FileJson, Volume2, Loader2, Bot
 } from 'lucide-react';
 import { getRewards, saveRewards, getRedemptionRequests, saveRedemptionRequests, getRewardsAsync, saveRewardAsync, deleteRewardAsync, getRedemptionRequestsAsync, saveRedemptionRequestAsync, Reward as StoreReward, RedemptionRequest as StoreRedemptionRequest } from '../lib/rewardsStore';
 import { getChallengePacks, getPuzzlePacks, getBattlePools } from '../lib/practiceStoreNew';
@@ -29,6 +29,7 @@ import UserManagement from '../features/admin/components/UserManagement';
 import StudentIntelligence from '../features/admin/components/StudentIntelligence';
 import SchoolsManagement from '../features/admin/components/SchoolsManagement';
 import { OutlineMap, MobileStudioNav, CurriculumStudio, useCurriculumStudio, useScreenForm } from '../features/admin/curriculum';
+import { CopilotPanel } from '../features/admin/curriculum/copilot';
 import { 
   supabase,
   isSupabaseConfigured, 
@@ -2022,7 +2023,7 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
   };
   
   // Tab within the workspace
-  const [activeTab, setActiveTab] = useState<'manage' | 'worlds' | 'lessons' | 'modules' | 'challenges' | 'curriculum-json' | 'ai-generator' | 'practice-arena' | 'celebrations' | 'users-list' | 'rewards-manager' | 'student-intelligence' | 'schools' | 'bulk-narrations' | 'explanation-audio-manager'>('manage');
+  const [activeTab, setActiveTab] = useState<'manage' | 'worlds' | 'lessons' | 'modules' | 'challenges' | 'curriculum-json' | 'ai-generator' | 'ai-copilot' | 'practice-arena' | 'celebrations' | 'users-list' | 'rewards-manager' | 'student-intelligence' | 'schools' | 'bulk-narrations' | 'explanation-audio-manager'>('manage');
   const [mobileNavTab, setMobileNavTab] = useState<'home' | 'lessons' | 'create' | 'analytics' | 'settings'>('home');
   const [screenEditorTab, setScreenEditorTab] = useState<'content' | 'config' | 'mascot' | 'simulator'>('content');
   const [showMobileProfileDrawer, setShowMobileProfileDrawer] = useState(false);
@@ -4542,7 +4543,7 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
             <h1 className="text-xs font-black text-slate-900 tracking-tight truncate max-w-[170px] leading-tight mt-0.5">
               {mobileNavTab === 'home' && 'Chikoo Studio'}
               {mobileNavTab === 'lessons' && (selectedLessonId ? (currentSelectedLessonObj?.title || 'Lesson Editor') : (selectedModuleId ? (currentSelectedModuleObj?.title || 'Unit View') : 'Curriculum Studio'))}
-              {mobileNavTab === 'create' && 'AI Co-Creator'}
+              {mobileNavTab === 'create' && (activeTab === 'ai-copilot' ? 'AI Copilot' : 'AI Co-Creator')}
               {mobileNavTab === 'analytics' && (activeTab === 'student-intelligence' ? 'Intelligence Hub' : activeTab === 'schools' ? 'Schools Hub' : 'Student Accounts')}
               {mobileNavTab === 'settings' && (activeTab === 'practice-arena' ? 'Practice Arena' : activeTab === 'celebrations' ? 'Celebration Center' : activeTab === 'curriculum-json' ? 'Curriculum JSON' : 'Rewards Store')}
             </h1>
@@ -4667,6 +4668,25 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
               <span className="truncate flex-1 text-left">AI Co-Creator</span>
               <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">
                 AI
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundManager.play('click');
+                setActiveTab('ai-copilot');
+              }}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                activeTab === 'ai-copilot'
+                  ? 'bg-indigo-50 text-indigo-700 font-extrabold shadow-3xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              <Bot size={16} className={activeTab === 'ai-copilot' ? 'text-indigo-600' : 'text-slate-400'} />
+              <span className="truncate flex-1 text-left">AI Copilot</span>
+              <span className="text-[9px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded">
+                New
               </span>
             </button>
 
@@ -4981,6 +5001,21 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
                 >
                   <Sparkles size={13} className={activeTab === 'ai-generator' ? 'text-amber-300' : 'text-amber-500'} />
                   <span>AI Co-Creator</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundManager.play('click');
+                    setActiveTab('ai-copilot');
+                    setMobileViewMode('editor');
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all whitespace-nowrap shrink-0 flex items-center gap-1 ${
+                    activeTab === 'ai-copilot' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-700 hover:text-slate-950'
+                  }`}
+                >
+                  <Bot size={13} className={activeTab === 'ai-copilot' ? 'text-white' : 'text-indigo-500'} />
+                  <span>AI Copilot</span>
                 </button>
 
                 <button
@@ -6375,6 +6410,16 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
 
           {activeTab === 'celebrations' && (
             <CelebrationCenter />
+          )}
+
+          {/* TAB AI-COPILOT: chat assistant for the selected unit/lesson/screen (Ask mode, read-only) */}
+          {activeTab === 'ai-copilot' && (
+            <CopilotPanel
+              modulesList={modulesList.filter(isModuleInSelectedWorld)}
+              practiceModulesList={practiceModulesList.filter(isModuleInSelectedWorld)}
+              selectedModuleId={selectedModuleId}
+              selectedLessonId={selectedLessonId}
+            />
           )}
 
           {/* TAB AI-GENERATOR: GEMINI EXPERT LESSON CREATOR */}
