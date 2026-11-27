@@ -349,7 +349,23 @@ function AppContent() {
   }, []);
 
   const [curriculumVersion, setCurriculumVersion] = useState(0);
-  const [isAdminActive, setIsAdminActive] = useState(false);
+  const [isAdminActive, setIsAdminActive] = useState(() => {
+    return typeof window !== 'undefined' && (window.location.hash.toLowerCase().includes('admin') || new URLSearchParams(window.location.search).has('admin'));
+  });
+
+  useEffect(() => {
+    const handleAdminRoute = () => {
+      if (typeof window !== 'undefined' && (window.location.hash.toLowerCase().includes('admin') || new URLSearchParams(window.location.search).has('admin'))) {
+        setIsAdminActive(true);
+      }
+    };
+    window.addEventListener('hashchange', handleAdminRoute);
+    window.addEventListener('popstate', handleAdminRoute);
+    return () => {
+      window.removeEventListener('hashchange', handleAdminRoute);
+      window.removeEventListener('popstate', handleAdminRoute);
+    };
+  }, []);
 
   // Realtime dynamic curriculum state updates (deferred channel setup)
   useEffect(() => {
@@ -3038,7 +3054,21 @@ function AppContent() {
       </AnimatePresence>
 
       {/* 2. Sub-surface content pre-rendered and painted beneath the splash */}
-      {isCheckingUserStatus ? (
+      {isAdminActive ? (
+        <Suspense fallback={<ChikooReachingLoader fullScreen={true} />}>
+          <AdminPanel 
+            onClose={() => {
+              setIsAdminActive(false);
+              if (window.location.hash.toLowerCase().includes('admin')) {
+                window.location.hash = '';
+              }
+            }} 
+            currentUserEmail={sessionUser || 'admin@chikoo.ai'} 
+            isDbAdmin={isDbAdmin || true} 
+            onProfileUpdated={handleProfileUpdatedOutside} 
+          />
+        </Suspense>
+      ) : isCheckingUserStatus ? (
         <ChikooReachingLoader fullScreen={true} />
       ) : showAuthView ? (
         <Suspense fallback={<ChikooReachingLoader fullScreen={true} />}>
