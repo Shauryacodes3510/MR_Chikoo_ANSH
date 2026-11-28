@@ -2,9 +2,9 @@
 import { supabase } from '../../../../lib/supabase';
 import type { CopilotScope, ModuleLike } from '../../../../lib/copilot/types';
 import { resolveScope } from '../../../../lib/copilot/server/context';
-import type { ActionResponse, AuditResponse } from '../../../../lib/copilot/server/service';
+import type { ActionResponse, AuditResponse, AuditFinding, ChatResponse } from '../../../../lib/copilot/server/service';
 
-export type { ActionResponse, AuditResponse };
+export type { ActionResponse, AuditResponse, AuditFinding, ChatResponse };
 
 /** Server body limit is 1 MB; stay well under it. */
 const MAX_BODY_CHARS = 900_000;
@@ -65,4 +65,20 @@ export const proposeActions = async (args: { modules: ModuleLike[]; scope: Copil
 export const runAuditScan = async (args: { modules: ModuleLike[]; scope: CopilotScope }): Promise<AuditResponse> => {
   const out = await post('/api/copilot/audit', { scope: args.scope, modules: scoped(args.modules, args.scope) });
   return out as AuditResponse;
+};
+
+/** Unified chat: answers questions, proposes actions, or audits automatically based on context and message. */
+export const sendCopilotChat = async (args: {
+  modules: ModuleLike[];
+  scope: CopilotScope;
+  message: string;
+  history?: ChatTurn[];
+}): Promise<ChatResponse> => {
+  const out = await post('/api/copilot/chat', {
+    scope: args.scope,
+    modules: scoped(args.modules, args.scope),
+    message: args.message,
+    history: args.history ?? [],
+  });
+  return out as ChatResponse;
 };

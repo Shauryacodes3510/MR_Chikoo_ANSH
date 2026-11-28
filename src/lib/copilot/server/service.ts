@@ -11,7 +11,7 @@ import { parseActionPayload } from '../validate';
 import { validateActions } from '../applyActions';
 import { isPlainObject } from '../shared';
 import type { LlmAdapter } from './llm';
-import { ACTION_SYSTEM, ASK_SYSTEM, AUDIT_SYSTEM } from './prompts';
+import { ACTION_SYSTEM, ASK_SYSTEM, AUDIT_SYSTEM, CHAT_SYSTEM } from './prompts';
 import {
   buildScopeView,
   handlerForType,
@@ -222,4 +222,112 @@ export const runAudit = async (llm: LlmAdapter, input: { modules: unknown; scope
     }
   }
   return { findings, scanned: items.length, skippedUnsupported: skipped, batchErrors };
+};
+
+// ───────────────────────── UNIFIED CHAT ─────────────────────────
+export interface ChatResponse {
+  intent: 'ask' | 'action' | 'audit';
+  reply: string;
+  actions?: CopilotAction[];
+  results?: ActionResult[];
+  findings?: AuditFinding[];
+  scanned?: number;
+  skippedUnsupported?: number;
+  errors?: string[];
+  retried?: boolean;
+}
+
+export const runChat = async (
+  llm: LlmAdapter,
+  input: { modules: unknown; scope: unknown; message: unknown; history?: unknown },
+): Promise<ChatResponse> => {
+  const { scope, scoped, contextJson } = prepare(input.modules, input.scope);
+  const message = cleanText(input.message, 'message');
+  const history = parseHistory(input.history)
+    .map(t => `${t.role === 'user' ? 'Admin' : 'Copilot'}: ${t.text}`)
+    .join('\n');
+  const user = `CURRICULUM (selected scope):\n${contextJson}\n\n${history ? `CHAT SO FAR:\n${history}\n\n` : ''}ADMIN MESSAGE:\n${message}`;
+
+  // Direct keyword short-circuit for explicit audit commands to ensure 100% reliable audit triggering
+  const isAuditIntent = /^\s*(audit|check\s+(all\s+)?answers|scan\s+(for\s+)?errors|find\s+mistakes|sare\s+answers\s+check)\b/i.test(message);
+  if (isAuditIntent) {
+    const auditRes = await runAudit(llm, { modules: input.modules, scope: input.scope });
+    const reply = auditRes.findings.length > 0
+      ? `Audit complete for ${scope.kind}: found ${auditRes.findings.length} potential issue(s). Review each finding below or click "Fix" to apply changes.`
+      : `Audit complete for ${scope.kind}: scanned ${auditRes.scanned} screen(s). All answers and content verified correct!`;
+    return {
+      intent: 'audit',
+      reply,
+      findings: auditRes.findings,
+      scanned: auditRes.scanned,
+      skippedUnsupported: auditRes.skippedUnsupported,
+    };
+  }
+
+  let raw = await llm.generate({ system: CHAT_SYSTEM, user, json: true });
+  let parsedJson = safeJson(raw) as any;
+  let retried = false;
+
+  if (!isPlainObject(parsedJson)) {
+    retried = true;
+    raw = await llm.generate({
+      system: CHAT_SYSTEM,
+      user: `${user}\n\nYour previous response was not valid JSON. Return ONLY valid JSON with "intent" and "reply".`,
+      json: true,
+    });
+    parsedJson = safeJson(raw) as any;
+  }
+
+  // If still not valid JSON, treat raw text as an Ask reply
+  if (!isPlainObject(parsedJson)) {
+    return {
+      intent: 'ask',
+      reply: raw.trim() || 'I could not process that request. Please try again.',
+      retried,
+    };
+  }
+
+  const intent = parsedJson.intent === 'action' || parsedJson.intent === 'audit' ? parsedJson.intent : 'ask';
+  const reply = typeof parsedJson.reply === 'string' && parsedJson.reply.trim()
+    ? parsedJson.reply.trim()
+    : 'I have processed your request.';
+
+  if (intent === 'audit') {
+    const auditRes = await runAudit(llm, { modules: input.modules, scope: input.scope });
+    return {
+      intent: 'audit',
+      reply,
+      findings: auditRes.findings,
+      scanned: auditRes.scanned,
+      skippedUnsupported: auditRes.skippedUnsupported,
+      retried,
+    };
+  }
+
+  if (intent === 'action') {
+    const actionPayload = parseActionPayload(raw);
+    if (actionPayload.actions.length > 0) {
+      const run = validateActions(scoped, actionPayload.actions, scope);
+      return {
+        intent: 'action',
+        reply,
+        actions: actionPayload.actions,
+        results: run.results,
+        errors: actionPayload.errors,
+        retried,
+      };
+    }
+    return {
+      intent: 'ask',
+      reply,
+      errors: actionPayload.errors,
+      retried,
+    };
+  }
+
+  return {
+    intent: 'ask',
+    reply,
+    retried,
+  };
 };

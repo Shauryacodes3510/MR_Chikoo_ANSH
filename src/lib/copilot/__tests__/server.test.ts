@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { LlmAdapter, LlmRequest } from '../server/llm';
-import { runAsk, runAction, runAudit, CopilotInputError, AUDIT_MAX_SCREENS } from '../server/service';
+import { runAsk, runAction, runAudit, runChat, CopilotInputError, AUDIT_MAX_SCREENS } from '../server/service';
 import { toAiScreenView, resolveScope } from '../server/context';
 import { deepFreeze, makeMcq, makeModules } from './fixtures';
 
@@ -131,5 +131,38 @@ describe('audit', () => {
   it('refuses huge audits', async () => {
     const many = [{ id: 'u', lessons: [{ id: 'L', challenges: Array.from({ length: AUDIT_MAX_SCREENS + 1 }, (_, i) => makeMcq({ id: `s${i}` })) }] }];
     await expect(runAudit(fake(['{}']).llm, { modules: many, scope: { kind: 'unit', unitId: 'u' } })).rejects.toThrow(/Too many/);
+  });
+});
+
+describe('unified chat', () => {
+  it('handles general questions with ask intent', async () => {
+    const reply = JSON.stringify({ intent: 'ask', reply: 'This lesson explains machine learning.' });
+    const { llm } = fake([reply]);
+    const r = await runChat(llm, { modules: makeModules(), scope: lessonScope, message: 'What is this lesson?' });
+    expect(r.intent).toBe('ask');
+    expect(r.reply).toBe('This lesson explains machine learning.');
+  });
+
+  it('handles edit instructions with action intent and returns validated results', async () => {
+    const reply = JSON.stringify({
+      intent: 'action',
+      reply: 'Changed option index.',
+      actions: [{ action: 'updateMcq', lessonId: 'lessonA', screenId: 'scr_mcq_1', fields: { correctOptionIndex: 0 } }],
+    });
+    const { llm } = fake([reply]);
+    const r = await runChat(llm, { modules: makeModules(), scope: lessonScope, message: 'Make option 1 correct' });
+    expect(r.intent).toBe('action');
+    expect(r.actions).toHaveLength(1);
+    expect(r.results![0].status).toBe('ok');
+    expect(r.results![0].diff.some(d => d.field === 'correctAnswer')).toBe(true);
+  });
+
+  it('triggers audit scan directly when audit keywords are in message', async () => {
+    const auditReply = JSON.stringify({ findings: [] });
+    const { llm } = fake([auditReply]);
+    const r = await runChat(llm, { modules: makeModules(), scope: lessonScope, message: 'audit this lesson please' });
+    expect(r.intent).toBe('audit');
+    expect(r.findings).toEqual([]);
+    expect(r.scanned).toBe(2);
   });
 });

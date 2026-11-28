@@ -8,7 +8,7 @@
  */
 import type express from 'express';
 import { createGeminiAdapter, DEFAULT_COPILOT_MODEL, type LlmAdapter } from './llm';
-import { CopilotInputError, runAction, runAsk, runAudit } from './service';
+import { CopilotInputError, runAction, runAsk, runAudit, runChat } from './service';
 
 export interface CopilotRouteDeps {
   isAdmin: (req: express.Request) => Promise<boolean>;
@@ -44,4 +44,5 @@ export const registerCopilotRoutes = (app: express.Express, deps: CopilotRouteDe
   app.post('/api/copilot/ask', handle('ask', (llm, b) => runAsk(llm, b)));
   app.post('/api/copilot/action', handle('action', (llm, b) => runAction(llm, b)));
   app.post('/api/copilot/audit', handle('audit', (llm, b) => runAudit(llm, b)));
+  app.post('/api/copilot/chat', handle('chat', (llm, b) => runChat(llm, b)));
 };
