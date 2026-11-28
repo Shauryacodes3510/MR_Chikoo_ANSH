@@ -1433,7 +1433,8 @@ export async function getWeeklyLeaderboard(
   // 2. Fallback gracefully to /api/database/leaderboard
   try {
     const apiRes = await fetch('/api/database/leaderboard');
-    if (apiRes.ok) {
+    const contentType = apiRes.headers.get('content-type') || '';
+    if (apiRes.ok && contentType.includes('application/json')) {
       const json = await apiRes.json();
       if (json && json.success && Array.isArray(json.leaderboard)) {
         const entries: LeaderboardEntry[] = json.leaderboard.slice(0, limit).map((item: any, idx: number) => {

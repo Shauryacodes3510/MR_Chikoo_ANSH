@@ -2,7 +2,6 @@ import express from "express";
 import crypto from "crypto";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
@@ -1562,7 +1561,8 @@ Strict Requirements:
   // Serve service worker sw.js dynamically
   app.get("/sw.js", (req, res) => {
     res.setHeader("Content-Type", "application/javascript");
-    res.sendFile(path.join(process.cwd(), "sw.js"));
+    const swPublic = path.join(process.cwd(), "public", "sw.js");
+    res.sendFile(fs.existsSync(swPublic) ? swPublic : path.join(process.cwd(), "sw.js"));
   });
 
   // Serve PWA manifest
@@ -5030,11 +5030,18 @@ Return your response as a JSON object with a single "messages" field which is an
     next(err);
   });
 
+  // Vercel serverless: static files + SPA fallback are handled by Vercel (see vercel.json),
+  // so we only need the API app. No vite, no static serving, no app.listen().
+  if (process.env.VERCEL) {
+    return app;
+  }
+
   // Vite server integration
   const isProdBundle = import.meta.url.includes('/dist/') || (typeof __filename !== 'undefined' && __filename.endsWith('.cjs'));
   const isProduction = process.env.NODE_ENV === "production" || isProdBundle;
 
   if (!isProduction) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -5128,9 +5135,13 @@ Return your response as a JSON object with a single "messages" field which is an
       console.error("Failed to seed server-side analytical events:", se);
     }
   });
+
+  return app;
 }
 
-startServer().catch(err => {
+export const appReady = startServer().catch(err => {
   console.error("Failed to start custom express server:", err);
+  throw err;
 });
-export {};
+// Avoid unhandled-rejection crash on Cloud Run / dev (error is already logged above)
+appReady.catch(() => {});

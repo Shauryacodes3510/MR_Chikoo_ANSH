@@ -247,7 +247,8 @@ export async function fetchProductionCurriculum(): Promise<{ aiModules: Module[]
     // 1. First attempt: Server-side curriculum endpoint with service-role permissions
     try {
       const apiRes = await fetch('/api/database/curriculum');
-      if (apiRes.ok) {
+      const contentType = apiRes.headers.get('content-type') || '';
+      if (apiRes.ok && contentType.includes('application/json')) {
         const json = await apiRes.json();
         if (json && json.success && Array.isArray(json.modules) && json.modules.length > 0) {
           modulesData = json.modules;
@@ -258,18 +259,27 @@ export async function fetchProductionCurriculum(): Promise<{ aiModules: Module[]
       console.warn('[fetchProductionCurriculum] /api/database/curriculum fetch failed, trying direct Supabase:', apiErr);
     }
 
-    // 2. Direct Supabase fallback if API wasn't available
+    // 2. Direct Supabase fallback if API wasn't available and supabase is configured
+    if (modulesData.length === 0 && supabase) {
+      try {
+        const { data: worlds, error: worldError } = await supabase
+          .from('worlds')
+          .select('*, modules(*, lessons(*))')
+          .order('world_number');
+
+        if (!worldError && worlds && worlds.length > 0) {
+          modulesData = worlds.flatMap((w: any) => w.modules || []);
+          lessonsData = modulesData.flatMap((m: any) => m.lessons || []);
+        }
+      } catch (sbErr) {
+        console.warn('[fetchProductionCurriculum] Supabase direct query failed:', sbErr);
+      }
+    }
+
+    // 3. Fallback to bundled curriculum if no database modules were retrieved
     if (modulesData.length === 0) {
-      const { data: worlds, error: worldError } = await supabase
-        .from('worlds')
-        .select('*, modules(*, lessons(*))')
-        .order('world_number');
-
-      if (worldError) throw worldError;
-      if (!worlds) throw new Error('Curriculum fetch returned no data');
-
-      modulesData = worlds.flatMap((w: any) => w.modules || []);
-      lessonsData = modulesData.flatMap((m: any) => m.lessons || []);
+      console.log('[fetchProductionCurriculum] Using bundled local curriculum.');
+      return { aiModules: [...AI_CURRICULUM], practiceModules: [...PRACTICE_CURRICULUM] };
     }
 
     // Transform and map to Module structure with their assigned lessons
@@ -281,8 +291,8 @@ export async function fetchProductionCurriculum(): Promise<{ aiModules: Module[]
 
     return { aiModules, practiceModules: pracModules };
   } catch (error) {
-    console.error('CRITICAL: Failed to load production curriculum:', error);
-    throw error;
+    console.warn('Recovered from curriculum fetch issue with bundled fallback:', error);
+    return { aiModules: [...AI_CURRICULUM], practiceModules: [...PRACTICE_CURRICULUM] };
   }
 }
 
