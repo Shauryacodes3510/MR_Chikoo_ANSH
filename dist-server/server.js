@@ -2550,14 +2550,18 @@ Rules:
 var AUDIT_SYSTEM = `${COMMON}
 MODE: AUDIT (read-only). Perform a comprehensive curriculum quality audit across ALL screens (Story scenes, Visual explainers, Content screens, and MCQs) according to the MASTER QUALITY STANDARDS:
 
+SPECIAL INSTRUCTIONS & CHAT CONTEXT RULES:
+- If the admin gave a specific instruction in their message or recent chat (e.g. "ignore error on screen 8", "leave that problem", "check only grammar and hard words on story screens", "iss error ko chor ke baki sab dekho"): YOU MUST STRICTLY FOLLOW THIS INSTRUCTION. Never re-report an issue the admin explicitly asked you to skip or ignore!
+- Always inspect ALL screens in the batch: Story screens, Visual explainers, Content screens, and Quiz questions.
+
 MANDATORY AUDIT SCOPE - AUDIT ALL SCREEN TYPES:
-1. Story & Visual screens (comic_story, visual_analogy, student_story, image_explainer, fun_fact, meme_screen):
-   - Check character dialogues, story panels, scenario text, analogies, and takeaways for spelling/grammar errors, age-inappropriate English vocabulary, or confusing explanations.
+1. Story & Visual screens (comic_story, visual_analogy, student_story, image_explainer, fun_fact, meme_screen, before_after_story, ai_around_you):
+   - Check character dialogues, story panels, scenario text, analogies, and takeaways for spelling/grammar errors, age-inappropriate English vocabulary (students 8\u201314), or confusing explanations.
 2. Content screens (content_screen, visual_lesson_screen):
    - Check heading, subheading, contentBody, quote, and mascotMessage for spelling/grammar and vocabulary difficulty (8\u201314 years).
    - Provide a ready "fix" payload using action "updateContentScreen".
-3. Question & Quiz screens (c1_multiple_choice, c9_true_false, etc.):
-   - Check factually wrong marked answer (correctOptionIndex) or missing/null answer.
+3. Question & Quiz screens (c1_multiple_choice, c9_true_false, fill_in_blank, tap_right_answer, etc.):
+   - Check factually wrong marked answer (correctOptionIndex / correctAnswer) or missing/null answer.
    - Check multiple options that could be correct, or ambiguous questions.
    - Check explanation contradicting the marked answer.
    - Check severe "longest option bias" and distractor believability.
@@ -2716,6 +2720,52 @@ var toAiScreenView = (screen) => {
       ...base,
       title: ms.title || screen.question || "",
       explanation: ms.explanation || screen.explanation || ""
+    };
+  }
+  if (screen.type === "before_after_story") {
+    const bas = isPlainObject(screen.beforeAfterStory) ? screen.beforeAfterStory : screen;
+    return {
+      ...base,
+      situation: bas.situation || screen.question || "",
+      beforeTitle: bas.beforeTitle || "",
+      beforeText: bas.beforeText || "",
+      afterTitle: bas.afterTitle || "",
+      afterText: bas.afterText || "",
+      takeaway: bas.takeaway || screen.explanation || ""
+    };
+  }
+  if (screen.type === "ai_around_you") {
+    const aay = isPlainObject(screen.aiAroundYou) ? screen.aiAroundYou : screen;
+    return {
+      ...base,
+      title: aay.title || screen.question || "",
+      examples: sanitize(aay.examples) || []
+    };
+  }
+  if (screen.type === "fill_in_blank" || screen.type === "tap_right_answer") {
+    return {
+      ...base,
+      question: screen.question || "",
+      correctAnswer: screen.correctAnswer ?? "",
+      options: screen.options || [],
+      explanation: getExplanationText(screen)
+    };
+  }
+  if (screen.type === "match_pairs") {
+    return {
+      ...base,
+      question: screen.question || "",
+      pairs: sanitize(screen.pairs) || [],
+      explanation: getExplanationText(screen)
+    };
+  }
+  if (screen.type === "sort_sequence") {
+    return {
+      ...base,
+      question: screen.question || "",
+      steps: sanitize(screen.steps) || [],
+      correctOrder: screen.correctOrder || [],
+      explanation: getExplanationText(screen)
     };
   }
   const { id: _id, type: _type, ...rest } = screen;
@@ -2881,6 +2931,8 @@ var runAudit = async (llm, input) => {
   if (items.length > AUDIT_MAX_SCREENS) {
     throw new CopilotInputError(`Too many screens to audit at once (${items.length}, max ${AUDIT_MAX_SCREENS}). Select a lesson or a smaller unit.`, 413);
   }
+  const customInstruction = typeof input.instruction === "string" && input.instruction.trim() ? input.instruction.trim() : "";
+  const historyText = parseHistory(input.history).map((t) => `${t.role === "user" ? "Admin" : "Copilot"}: ${t.text}`).join("\n");
   const findings = [];
   const batchErrors = [];
   for (let i = 0; i < items.length; i += AUDIT_BATCH_SIZE) {
@@ -2888,8 +2940,18 @@ var runAudit = async (llm, input) => {
     const known = new Map(batch.map((b) => [`${b.lessonId}::${b.screen.id}`, b]));
     const payload = JSON.stringify({ screens: batch.map((b) => ({ lessonId: b.lessonId, ...toAiScreenView(b.screen) })) });
     try {
-      const raw = await llm.generate({ system: AUDIT_SYSTEM, user: `SCREENS TO CHECK:
-${payload}`, json: true });
+      const userPrompt = [
+        historyText ? `RECENT CHAT CONVERSATION:
+${historyText}
+` : "",
+        customInstruction ? `ADMIN SPECIAL INSTRUCTION FOR THIS AUDIT:
+"${customInstruction}"
+CRITICAL: Strictly adhere to the admin's instruction above! For example, if the admin asks to ignore a previously reported error, skip it. If the admin asks to focus on spelling, grammar, kids vocabulary, or story screens, prioritize those.
+` : "",
+        `SCREENS TO AUDIT (Batch ${Math.floor(i / AUDIT_BATCH_SIZE) + 1}):
+${payload}`
+      ].filter(Boolean).join("\n");
+      const raw = await llm.generate({ system: AUDIT_SYSTEM, user: userPrompt, json: true });
       const data = safeJson(raw);
       if (!isPlainObject(data) || !Array.isArray(data.findings)) {
         batchErrors.push(`Batch ${i / AUDIT_BATCH_SIZE + 1}: AI returned an invalid answer.`);
@@ -2956,8 +3018,13 @@ ${history}
 ${message}`;
   const isAuditIntent = isAuditMessage(message);
   if (isAuditIntent) {
-    const auditRes = await runAudit(llm, { modules: input.modules, scope: input.scope });
-    const reply2 = auditRes.findings.length > 0 ? `Audit complete for ${scope.kind}: found ${auditRes.findings.length} potential issue(s). Review each finding below or click "Fix" to apply changes.` : `Audit complete for ${scope.kind}: scanned ${auditRes.scanned} screen(s). All answers and content verified correct!`;
+    const auditRes = await runAudit(llm, {
+      modules: input.modules,
+      scope: input.scope,
+      instruction: message,
+      history: input.history
+    });
+    const reply2 = auditRes.findings.length > 0 ? `Audit complete for ${scope.kind}: scanned ${auditRes.scanned} screen(s), found ${auditRes.findings.length} issue(s). Review each finding below:` : `Audit complete for ${scope.kind}: scanned ${auditRes.scanned} screen(s). All screens verified against the Master Quality Standards!`;
     return {
       intent: "audit",
       reply: reply2,
@@ -2990,7 +3057,12 @@ Your previous response was not valid JSON. Return ONLY valid JSON with "intent" 
   const intent = parsedJson.intent === "action" || parsedJson.intent === "audit" ? parsedJson.intent : "ask";
   const reply = typeof parsedJson.reply === "string" && parsedJson.reply.trim() ? parsedJson.reply.trim() : "I have processed your request.";
   if (intent === "audit") {
-    const auditRes = await runAudit(llm, { modules: input.modules, scope: input.scope });
+    const auditRes = await runAudit(llm, {
+      modules: input.modules,
+      scope: input.scope,
+      instruction: message,
+      history: input.history
+    });
     return {
       intent: "audit",
       reply,

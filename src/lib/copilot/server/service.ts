@@ -163,7 +163,10 @@ export interface AuditResponse {
   batchErrors: string[];
 }
 
-export const runAudit = async (llm: LlmAdapter, input: { modules: unknown; scope: unknown }): Promise<AuditResponse> => {
+export const runAudit = async (
+  llm: LlmAdapter,
+  input: { modules: unknown; scope: unknown; instruction?: unknown; history?: unknown },
+): Promise<AuditResponse> => {
   const { scope, scoped } = prepare(input.modules, input.scope);
   const { items, skipped } = listEditableScreens(scoped);
   if (items.length === 0) {
@@ -173,6 +176,13 @@ export const runAudit = async (llm: LlmAdapter, input: { modules: unknown; scope
     throw new CopilotInputError(`Too many screens to audit at once (${items.length}, max ${AUDIT_MAX_SCREENS}). Select a lesson or a smaller unit.`, 413);
   }
 
+  const customInstruction = typeof input.instruction === 'string' && input.instruction.trim()
+    ? input.instruction.trim()
+    : '';
+  const historyText = parseHistory(input.history)
+    .map(t => `${t.role === 'user' ? 'Admin' : 'Copilot'}: ${t.text}`)
+    .join('\n');
+
   const findings: AuditFinding[] = [];
   const batchErrors: string[] = [];
   for (let i = 0; i < items.length; i += AUDIT_BATCH_SIZE) {
@@ -180,7 +190,13 @@ export const runAudit = async (llm: LlmAdapter, input: { modules: unknown; scope
     const known = new Map(batch.map(b => [`${b.lessonId}::${b.screen.id}`, b]));
     const payload = JSON.stringify({ screens: batch.map(b => ({ lessonId: b.lessonId, ...toAiScreenView(b.screen) })) });
     try {
-      const raw = await llm.generate({ system: AUDIT_SYSTEM, user: `SCREENS TO CHECK:\n${payload}`, json: true });
+      const userPrompt = [
+        historyText ? `RECENT CHAT CONVERSATION:\n${historyText}\n` : '',
+        customInstruction ? `ADMIN SPECIAL INSTRUCTION FOR THIS AUDIT:\n"${customInstruction}"\nCRITICAL: Strictly adhere to the admin's instruction above! For example, if the admin asks to ignore a previously reported error, skip it. If the admin asks to focus on spelling, grammar, kids vocabulary, or story screens, prioritize those.\n` : '',
+        `SCREENS TO AUDIT (Batch ${Math.floor(i / AUDIT_BATCH_SIZE) + 1}):\n${payload}`,
+      ].filter(Boolean).join('\n');
+
+      const raw = await llm.generate({ system: AUDIT_SYSTEM, user: userPrompt, json: true });
       const data = safeJson(raw);
       if (!isPlainObject(data) || !Array.isArray(data.findings)) {
         batchErrors.push(`Batch ${i / AUDIT_BATCH_SIZE + 1}: AI returned an invalid answer.`);
@@ -264,10 +280,15 @@ export const runChat = async (
   // Direct keyword short-circuit for audit commands to ensure 100% reliable audit triggering
   const isAuditIntent = isAuditMessage(message);
   if (isAuditIntent) {
-    const auditRes = await runAudit(llm, { modules: input.modules, scope: input.scope });
+    const auditRes = await runAudit(llm, {
+      modules: input.modules,
+      scope: input.scope,
+      instruction: message,
+      history: input.history,
+    });
     const reply = auditRes.findings.length > 0
-      ? `Audit complete for ${scope.kind}: found ${auditRes.findings.length} potential issue(s). Review each finding below or click "Fix" to apply changes.`
-      : `Audit complete for ${scope.kind}: scanned ${auditRes.scanned} screen(s). All answers and content verified correct!`;
+      ? `Audit complete for ${scope.kind}: scanned ${auditRes.scanned} screen(s), found ${auditRes.findings.length} issue(s). Review each finding below:`
+      : `Audit complete for ${scope.kind}: scanned ${auditRes.scanned} screen(s). All screens verified against the Master Quality Standards!`;
     return {
       intent: 'audit',
       reply,
@@ -306,7 +327,12 @@ export const runChat = async (
     : 'I have processed your request.';
 
   if (intent === 'audit') {
-    const auditRes = await runAudit(llm, { modules: input.modules, scope: input.scope });
+    const auditRes = await runAudit(llm, {
+      modules: input.modules,
+      scope: input.scope,
+      instruction: message,
+      history: input.history,
+    });
     return {
       intent: 'audit',
       reply,

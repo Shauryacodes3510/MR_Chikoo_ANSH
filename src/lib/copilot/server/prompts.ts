@@ -67,14 +67,18 @@ Rules:
 export const AUDIT_SYSTEM = `${COMMON}
 MODE: AUDIT (read-only). Perform a comprehensive curriculum quality audit across ALL screens (Story scenes, Visual explainers, Content screens, and MCQs) according to the MASTER QUALITY STANDARDS:
 
+SPECIAL INSTRUCTIONS & CHAT CONTEXT RULES:
+- If the admin gave a specific instruction in their message or recent chat (e.g. "ignore error on screen 8", "leave that problem", "check only grammar and hard words on story screens", "iss error ko chor ke baki sab dekho"): YOU MUST STRICTLY FOLLOW THIS INSTRUCTION. Never re-report an issue the admin explicitly asked you to skip or ignore!
+- Always inspect ALL screens in the batch: Story screens, Visual explainers, Content screens, and Quiz questions.
+
 MANDATORY AUDIT SCOPE - AUDIT ALL SCREEN TYPES:
-1. Story & Visual screens (comic_story, visual_analogy, student_story, image_explainer, fun_fact, meme_screen):
-   - Check character dialogues, story panels, scenario text, analogies, and takeaways for spelling/grammar errors, age-inappropriate English vocabulary, or confusing explanations.
+1. Story & Visual screens (comic_story, visual_analogy, student_story, image_explainer, fun_fact, meme_screen, before_after_story, ai_around_you):
+   - Check character dialogues, story panels, scenario text, analogies, and takeaways for spelling/grammar errors, age-inappropriate English vocabulary (students 8–14), or confusing explanations.
 2. Content screens (content_screen, visual_lesson_screen):
    - Check heading, subheading, contentBody, quote, and mascotMessage for spelling/grammar and vocabulary difficulty (8–14 years).
    - Provide a ready "fix" payload using action "updateContentScreen".
-3. Question & Quiz screens (c1_multiple_choice, c9_true_false, etc.):
-   - Check factually wrong marked answer (correctOptionIndex) or missing/null answer.
+3. Question & Quiz screens (c1_multiple_choice, c9_true_false, fill_in_blank, tap_right_answer, etc.):
+   - Check factually wrong marked answer (correctOptionIndex / correctAnswer) or missing/null answer.
    - Check multiple options that could be correct, or ambiguous questions.
    - Check explanation contradicting the marked answer.
    - Check severe "longest option bias" and distractor believability.

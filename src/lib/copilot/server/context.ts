@@ -144,6 +144,52 @@ export const toAiScreenView = (screen: ScreenLike): AiScreenView => {
       explanation: ms.explanation || screen.explanation || '',
     };
   }
+  if (screen.type === 'before_after_story') {
+    const bas = (isPlainObject(screen.beforeAfterStory) ? screen.beforeAfterStory : screen) as Record<string, any>;
+    return {
+      ...base,
+      situation: bas.situation || screen.question || '',
+      beforeTitle: bas.beforeTitle || '',
+      beforeText: bas.beforeText || '',
+      afterTitle: bas.afterTitle || '',
+      afterText: bas.afterText || '',
+      takeaway: bas.takeaway || screen.explanation || '',
+    };
+  }
+  if (screen.type === 'ai_around_you') {
+    const aay = (isPlainObject(screen.aiAroundYou) ? screen.aiAroundYou : screen) as Record<string, any>;
+    return {
+      ...base,
+      title: aay.title || screen.question || '',
+      examples: (sanitize(aay.examples) as any[]) || [],
+    };
+  }
+  if (screen.type === 'fill_in_blank' || screen.type === 'tap_right_answer') {
+    return {
+      ...base,
+      question: screen.question || '',
+      correctAnswer: screen.correctAnswer ?? '',
+      options: screen.options || [],
+      explanation: getExplanationText(screen),
+    };
+  }
+  if (screen.type === 'match_pairs') {
+    return {
+      ...base,
+      question: screen.question || '',
+      pairs: (sanitize(screen.pairs) as any[]) || [],
+      explanation: getExplanationText(screen),
+    };
+  }
+  if (screen.type === 'sort_sequence') {
+    return {
+      ...base,
+      question: screen.question || '',
+      steps: (sanitize(screen.steps) as any[]) || [],
+      correctOrder: screen.correctOrder || [],
+      explanation: getExplanationText(screen),
+    };
+  }
   // All other challenge types:
   // AI gets the real data (dialogues, scenes, panels, options, answers, pairs...),
   // minus audio/hash/mirror fields.
