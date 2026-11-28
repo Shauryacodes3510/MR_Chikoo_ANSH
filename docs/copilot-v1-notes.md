@@ -109,3 +109,87 @@ Old audio playing with new text (accepted, admin banner) · mirror fields drifti
 
 ## 13. Future (v2+)
 addScreen, addLesson, updateLesson; remaining screen types; Marathi/Hinglish editing; bulk edits ("change tone of whole unit"); image/video upload → URL pipeline; audio generation hooks; reorder + JSON tools from Step 2 Phase 2.
+
+## 14. Current status & handoff (updated 29 Nov 2026) – READ THIS FIRST
+
+> This section is newer than section 10. Where section 10 (build waves & status) disagrees with this section, **this section wins**.
+> A fresh AI session should read: this section → sections 1–5 (rules) → section 6 (handlers) → then start with "14.4 Next steps".
+
+### 14.1 What is DONE (all on branch `Deployment`)
+
+| Wave | What | Where |
+|---|---|---|
+| 0 | Investigation, audit answers (section 8), normalizer extracted | `src/lib/curriculumNormalize.ts` |
+| 1 | Pure engine: validation, scope check, locked fields, mirror sync, stale marking, diff. Handler for `c1_multiple_choice` + `c9_true_false` (action `updateMcq`) | `src/lib/copilot/` (`types.ts`, `shared.ts`, `validate.ts`, `applyActions.ts`, `handlers/mcq.ts`, `handlers/index.ts`) |
+| 2 | Server: `POST /api/copilot/ask`, `/action`, `/audit` (admin only via `isAdmin`, Gemini behind `LlmAdapter`). **Nothing is saved server-side.** | `src/lib/copilot/server/` (`routes.ts`, `service.ts`, `context.ts`, `prompts.ts`, `llm.ts`); registered in `server.app.ts` via `registerCopilotRoutes(app, { isAdmin })` |
+| 2b | Manual test script (no UI needed): `npx tsx scripts/copilot-try.ts <ask\|action\|audit> <lessonId> "text"` (needs `$env:ADMIN_EMAIL`, `$env:ADMIN_PASSWORD`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) | `scripts/copilot-try.ts` |
+| 3 step 1 | **AI Copilot tab** in the admin sidebar ("Curriculum & Content" section, between "AI Co-Creator" and "Chikoo Worlds") and in the mobile "Create" sub-bar. **Ask mode only** (simple chat, read-only). Unit → Lesson → Screen scope selector. Chat survives tab switches (module-level store). | `src/features/admin/curriculum/copilot/` (`CopilotPanel.tsx`, `api.ts`, `chatStore.ts`, `index.ts`); wired in `src/components/AdminPanel.tsx` (`activeTab === 'ai-copilot'`) |
+| 3 steps 2–6 | **Mode switch Ask / Action / Audit.** Action: AI proposes → fresh client-side dry run → diff (old vs new, sensitive rows highlighted) → Apply / Reject / Apply all → saved via `saveCurriculumToStorage` → Undo (lesson-wise, refuses if the lesson was edited again). Audit: "Check all answers" → findings → **Fix** turns a finding into a normal Action. **Review screen**: student-style preview of the proposed edit (with a Current tab) before Apply. **Audio-outdated banner** (counts screens with a `stale` narration entry; button opens the audio queue tab). | `src/features/admin/curriculum/copilot/` (`CopilotPanel.tsx` shell, `AskView.tsx`, `ActionView.tsx`, `AuditView.tsx`, `DiffCard.tsx`, `ReviewModal.tsx`, `workStore.ts`, `api.ts`); pure logic `src/lib/copilot/applyToLists.ts` (`validateOnLists`, `applyOnLists`, `undoChanges`) and `lookup.ts` (`locateScreen`, `countStaleAudioScreens`); save wired in `AdminPanel.tsx` (`onCommit`) |
+| 3 fix | `BulkNarrationQueue.tsx`: missing = `!url \|\| status === 'stale'` | `src/components/admin/BulkNarrationQueue.tsx` |
+| 3 fix | Ask now sees the REAL fields of non-MCQ screens (options, correctAnswer, pairs, items…), with audio/hash/voice keys and mirror blobs stripped. | `context.ts` (`sanitize`, `toAiScreenView`) |
+
+Quality gates at this point: `npx tsc --noEmit` = 0 errors, `npx vite build` passes, `npm test` = **88 tests pass**.
+
+### 14.2 How things work right now (facts a new session must know)
+
+- **Request shape (all 3 routes):** `{ scope, modules, ... }` where `scope` = `{kind:'screen',lessonId,screenId}` | `{kind:'lesson',lessonId}` | `{kind:'unit',unitId}`. The CLIENT sends only the scoped modules (server body limit is 1 MB; `api.ts` pre-filters with `resolveScope`). Ask adds `question` + `history`; Action adds `instruction` + `history`; Audit adds nothing.
+- **Auth from browser:** `supabase.auth.getSession()` → `Authorization: Bearer <access_token>` (see `api.ts`). Server checks `isAdmin(req)`.
+- **Ask:** returns `{ success, answer }` (text only; never actions).
+- **Action:** returns `{ success, actions, results, message?, errors, retried }`. `results[i]` is an `ActionResult` (`status: 'ok'|'rejected'`, `errors`, `warnings`, `diff[]` with `{field,before,after,sensitive}`, `mirrorsWritten`, `staleAudioAliases`). The server already did a dry run (`validateActions`). One retry on invalid JSON.
+- **Audit:** returns `{ success, findings, scanned, skippedUnsupported, batchErrors }`. Each finding: `{lessonId, screenId, severity, problem, why, fixAction?, fixResult?, fixError?}`. `fixAction` is a ready, already-validated `CopilotAction` → it becomes a normal Action when the admin clicks **Fix**. Limits: batches of 12 screens, max 120 screens per audit.
+- **Applying (built):** `ActionView` re-validates on the CURRENT full lists (`validateOnLists`), applies with `applyOnLists(fullSpace, fullPrac, actions, scope)` (routes each action to the list that holds its lesson; `atomic` is all-or-nothing across both lists), then calls `onCommit(nextSpace, nextPrac)` = `setModulesList` + `setPracticeModulesList` + `saveCurriculumToStorage` + `setRawJsonText` in `AdminPanel.tsx`. Undo history lives in `workStore.ts` (max 20 records, cleared on refresh); `undoChanges` restores only the lessons an Apply touched and only if they still equal the version the Apply produced.
+- **Where the data lives in the UI:** `AdminPanel.tsx` holds `modulesList`, `practiceModulesList` (+ setters), `selectedModuleId`, `selectedLessonId`, `isModuleInSelectedWorld`. `CopilotPanel` receives world-filtered copies as props (`modulesList`, `practiceModulesList`, `selectedModuleId`, `selectedLessonId`). The panel also gets the FULL lists (`fullModulesList`, `fullPracticeList`) and `onCommit` / `onOpenAudioQueue` callbacks (do NOT import AdminPanel state into the panel).
+- **Review screen:** reuses `ChallengePreview` from `src/components/admin/ChallengePreviewWrapper.tsx` (no second renderer). That preview does NOT draw the question for `c1_multiple_choice` / `c9_true_false`, so `ReviewModal` shows the question above it. When you add a screen type, check what the preview draws and add a small header for anything it leaves out.
+- **Editable screen types today:** only `c1_multiple_choice`, `c9_true_false`. Other types are readable in Ask, but Action/Audit reject or skip them (`isEditableType` in `context.ts`, `HANDLERS` in `handlers/index.ts`).
+- **Decision taken by the assistant, owner should confirm:** `xpValue` must be an integer 0–1000 (`LIMITS.xpMax` in `handlers/mcq.ts`). Change it if the game uses another range.
+- **Model:** `gemini-3.5-flash`, override with env `COPILOT_MODEL`. Key: `GEMINI_API_KEY` (server only, never `VITE_`).
+
+### 14.3 Gotchas (learned the hard way)
+
+1. **Restart the backend after every pull/patch.** `npm run dev` = `tsx server.ts` does NOT hot-reload server code (only the Vite frontend reloads). Symptom of a stale server: `[API 404] Unmatched API route: POST /api/copilot/...`. Fix: `Get-Process node | Stop-Process -Force` then `npm run dev`.
+2. `npm start` runs the prebuilt `dist-server/server.js`, which is tracked in git and is NOT updated by patches. Use `npm run dev`, or `npm run build` first.
+3. Env is Windows + PowerShell. Deliver code as `.patch` files (`git am`). Don't include `dist-server/server.js` in patches.
+4. The LLM must see clean data: never send audio urls/hashes/voice ids or the mirror blobs (`explanation_*`, `contentScreen`, `visualLessonScreen`). Handled in `context.ts`.
+5. No rate limiting on `/api/copilot/*` yet (admin-only, but Gemini costs money). Consider adding before wide use.
+6. Two admins editing the same lesson → last write wins (known risk, section 12).
+
+### 14.4 Next steps
+
+Wave 3 UI is BUILT (ask/action/audit/undo/review/banner) but was verified only by `tsc`, `vite build`, 88 unit tests and server-side render smoke tests. **It has not been clicked through in a real browser against the real DB yet.**
+
+1. **Browser verification on a dummy lesson (dev/staging)** with the checklist in section 11 / 14.6. Fix whatever it shows (layout heights `h-[calc(100dvh-14rem)]`, mobile nav overlap, etc.).
+2. **Audio regeneration is NOT usable yet** (see 14.8 finding 1): `BulkNarrationQueue` calls a route that does not exist, and regenerating stale audio must pass the NEW text as `approvedTexts`, because the server otherwise reuses the old `audioNarrations.<lang>.text`. After a regenerate the client must write the returned `audioNarrations` back into its lists (otherwise the next client save overwrites the DB with the old audio). Build this as its own step, with the owner's OK (it costs TTS money).
+3. **Then add the remaining screen types** (14.5), one per step.
+
+Rules for every step (unchanged): explain before implementing · one commit per step · run `npx tsc --noEmit`, `npx vite build`, `npm test` (never above baseline: 0 tsc errors, 88 tests) · stop and report if a finding contradicts this file · UI follows the ui-ux-pro-max rules (mobile-first, 4.5:1 contrast, 44px targets, SVG icons, 150–300 ms animation, visible focus).
+
+### 14.5 After Wave 3: add the remaining screen types (one at a time)
+
+Order and counts are in section 6. Order: **`content_screen` (429)** → `c4_concept_matcher` (52) → `c2_fill_in_blank` (56, needs a real JSON example first: `select e from lessons, jsonb_array_elements(challenges) e where e->>'type'='c2_fill_in_blank' limit 2;`) → the rest.
+
+**Recipe to add a screen type (framework is done):**
+1. Get 2–3 real JSON examples of the type from the DB (do not guess the shape).
+2. Write `src/lib/copilot/handlers/<name>.ts` implementing `ScreenHandler` (`actionName`, `types`, `plan(screen, fields)`): schema of editable fields, locked list, mirror logic (write a mirror only if it equals the OLD logical value), validation (lengths, counts, ranges), diff entries (`sensitive` where needed), `spokenTextChanged` for audio stale marking. Never mutate input.
+3. Register it in `handlers/index.ts` (`HANDLERS`).
+4. Write tests in `src/lib/copilot/__tests__/` (valid edit, locked fields, mirrors, stale audio, immutability, bad input) and **mutation-check** them (break the code on purpose, tests must fail, then restore).
+5. Update the prompts in `server/prompts.ts` (allowed action name + fields for the new type) and `context.ts` if the AI view needs a special shape (`toAiScreenView`).
+6. Unlock `imageUrl` / `mediaUrl` only on types that really have them. The LLM never types a URL itself (upload-tool rule, section 4).
+7. Update this section and the counts.
+
+**`content_screen` specifics:** the same text lives in `contentScreen.*`, `visualLessonScreen.*` (exact duplicate), and `explanation.text == contentBody` (+ `explanation_concept/takeaway/speech_script`). The AI returns ONE logical field; code writes all mirrors. Editable fields: heading, subheading, contentBody, badge, quote, bottomMessage, mascotMessage (+ `imageUrl`/`mediaUrl` via upload tool only). `quoteAuthor` stays locked.
+
+### 14.6 Go-live checklist (from section 11) – still open
+
+Fresh DB backup (existing: `backup_lessons_20261127`, `backup_modules_20261127`, `backup_worlds_20261127`, `modules_backup_20261126`) · run `select * from pg_policies` and check foreign keys on the live DB · full dummy-lesson test on dev/staging (Ask saves nothing; Apply/Undo work; audio becomes stale; Audit finds a planted wrong answer; Review shows the proposed version) · merge `Deployment` → `main` ONLY after all of this passes.
+
+### 14.7 v2+ (unchanged, section 13)
+
+addScreen / addLesson / updateLesson, Marathi & Hinglish editing, bulk edits ("change tone of whole unit"), image/video upload → URL pipeline, audio generation hooks, reorder + JSON tools from Step 2 Phase 2.
+
+### 14.8 Findings from Wave 3 (29 Nov 2026) – these contradict or extend earlier sections
+
+1. **`BulkNarrationQueue` is partly broken (pre-existing).** `handleGenerateSingle` posts to `/api/screen-audio/generate`, which does NOT exist in `server.app.ts` (the real route is `POST /api/admin/generate-screen-narration`, section 1). It also never writes the generated audio back into the curriculum lists. Wave 3 only fixed what the notes asked (`!url || status==='stale'` so stale screens are LISTED). Regenerate through that queue will fail until fixed. The per-screen flow in `ScreenVoiceSection.tsx` uses the real route and `approvedTexts`.
+2. **Stale audio keeps the OLD text.** The engine flags `status:"stale"` but never touches `audioNarrations.<lang>.text` / url / hash (rule 5). The generate route falls back to that old text when `approvedTexts` is missing, so a naive regenerate would recreate the OLD audio. Always pass the new approved text.
+3. **The shared admin preview does not draw the question for c1/c9** (only options / True-False buttons). `ReviewModal` shows the question separately.
+4. **Server code is not hot-reloaded.** After pulling patches: stop all `node` processes and run `npm run dev` again; `npm start` runs the stale `dist-server/server.js`.
+5. `dist-server/server.js` is tracked in git but changes on every build; keep it out of patches.
