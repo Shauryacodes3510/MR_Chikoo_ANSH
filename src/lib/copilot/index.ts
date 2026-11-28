@@ -5,3 +5,4 @@ export { HANDLERS, findHandlerByAction } from './handlers';
 export { getExplanationText, withExplanationText, markAudioStale } from './shared';
 export { validateOnLists, applyOnLists, undoChanges } from './applyToLists';
 export type { LessonChange, ListsRunResult, UndoResult } from './applyToLists';
+export { locateScreen, listStaleAudioScreens, countStaleAudioScreens } from './lookup';
