@@ -1,21 +1,32 @@
 /**
- * AI Copilot – chat panel inside Curriculum Studio (Wave 3, step 1: Ask mode only).
- * Read-only: nothing here changes lessons. Action / Audit / Review screen come in later steps.
+ * AI Copilot – panel inside Curriculum Studio.
+ * Modes: Ask (read-only chat) · Action (propose → diff → Apply/Reject → Undo).
+ * The shell owns the Unit › Lesson › Screen scope, the audio-outdated banner and the mode switch.
  */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Bot, Send, Trash2, Loader2, AlertCircle, ShieldCheck } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Bot, Trash2, ShieldCheck, MessageSquare, Wand2, Volume2, X } from 'lucide-react';
 import type { CopilotScope, ModuleLike } from '../../../../lib/copilot/types';
-import { askCopilot, CopilotClientError, type ChatTurn } from './api';
-import { chatStore, newMessageId, useChatStore } from './chatStore';
+import { countStaleAudioScreens } from '../../../../lib/copilot/lookup';
+import { chatStore, useChatStore } from './chatStore';
+import { workStore, useWorkStore, type CopilotMode } from './workStore';
+import AskView from './AskView';
+import ActionView from './ActionView';
+import type { CopilotContext } from './viewTypes';
 
 interface Props {
+  /** World-filtered lists (what the admin sees; used for the selectors and sent to the AI). */
   modulesList: any[];
   practiceModulesList: any[];
+  /** FULL lists: Apply / Undo / the audio banner work on these. */
+  fullModulesList: any[];
+  fullPracticeList: any[];
   selectedModuleId?: string;
   selectedLessonId?: string;
+  /** Save both lists (setModulesList + setPracticeModulesList + saveCurriculumToStorage). */
+  onCommit: (nextSpace: any[], nextPrac: any[]) => void;
+  /** Opens the audio queue tab. */
+  onOpenAudioQueue?: () => void;
 }
-
-const MAX_LEN = 2000;
 
 const screenLabel = (s: any, i: number): string => {
   const text = s?.question || s?.contentScreen?.heading || s?.heading || '';
@@ -23,30 +34,22 @@ const screenLabel = (s: any, i: number): string => {
   return `${i + 1}. ${String(s?.type || 'screen').replace(/^c\d+_/, '')}${short ? ` – ${short}` : ''}`;
 };
 
-/** Minimal inline formatting for AI answers: **bold** and `code`. */
-const renderInline = (text: string): ReactNode[] =>
-  text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) => {
-    if (part.startsWith('**') && part.endsWith('**')) return <strong key={i}>{part.slice(2, -2)}</strong>;
-    if (part.startsWith('`') && part.endsWith('`'))
-      return <code key={i} className="px-1 py-0.5 rounded bg-slate-100 text-[0.85em] font-mono">{part.slice(1, -1)}</code>;
-    return <span key={i}>{part}</span>;
-  });
-
-const SUGGESTIONS = [
-  'Check if the marked correct answers are right',
-  'Summarize what this lesson teaches',
-  'Are the explanations simple enough for students?',
-  'Find typos or unclear questions',
-];
-
 const selectCls =
   'w-full min-h-[44px] px-3 rounded-xl border border-slate-300 bg-white text-sm text-slate-800 ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:border-indigo-500 transition-colors';
 
-export default function CopilotPanel({ modulesList, practiceModulesList, selectedModuleId, selectedLessonId }: Props) {
+const MODES: { id: CopilotMode; label: string; icon: typeof MessageSquare; hint: string }[] = [
+  { id: 'ask', label: 'Ask', icon: MessageSquare, hint: 'Ask mode · read-only, nothing is changed' },
+  { id: 'action', label: 'Action', icon: Wand2, hint: 'Action mode · you approve every change' },
+];
+
+export default function CopilotPanel({
+  modulesList, practiceModulesList, fullModulesList, fullPracticeList,
+  selectedModuleId, selectedLessonId, onCommit, onOpenAudioQueue,
+}: Props) {
   const { messages, pending } = useChatStore();
-  const [input, setInput] = useState('');
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const { mode, actionPending } = useWorkStore();
+  const [audioBannerHidden, setAudioBannerHidden] = useState(false);
 
   const units = useMemo(
     () => [
@@ -92,43 +95,22 @@ export default function CopilotPanel({ modulesList, practiceModulesList, selecte
         .filter(Boolean)
         .join(' › ');
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, pending]);
+  const staleCount = useMemo(
+    () => countStaleAudioScreens([fullModulesList as ModuleLike[], fullPracticeList as ModuleLike[]]),
+    [fullModulesList, fullPracticeList],
+  );
 
-  const send = async (raw: string) => {
-    const question = raw.trim();
-    if (!question || pending || !scope) return;
-    // history = the chat so far (answers only count if they were real answers)
-    const history: ChatTurn[] = chatStore
-      .getState()
-      .messages.filter(m => m.role !== 'error')
-      .map(m => ({ role: m.role as 'user' | 'assistant', text: m.text }));
-    chatStore.add({ id: newMessageId(), role: 'user', text: question, scopeLabel });
-    setInput('');
-    chatStore.setPending(true);
-    try {
-      const answer = await askCopilot({
-        modules: [...modulesList, ...practiceModulesList] as ModuleLike[],
-        scope,
-        question,
-        history,
-      });
-      chatStore.add({ id: newMessageId(), role: 'assistant', text: answer });
-    } catch (e) {
-      const msg = e instanceof CopilotClientError ? e.message : 'Something went wrong. Please try again.';
-      chatStore.add({ id: newMessageId(), role: 'error', text: msg });
-    } finally {
-      chatStore.setPending(false);
-    }
+  const ctx: CopilotContext = {
+    scope,
+    scopeLabel,
+    displayModules: [...modulesList, ...practiceModulesList] as ModuleLike[],
+    fullSpace: fullModulesList as ModuleLike[],
+    fullPrac: fullPracticeList as ModuleLike[],
+    onCommit: onCommit as CopilotContext['onCommit'],
   };
 
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      void send(input);
-    }
-  };
+  const current = MODES.find(m => m.id === mode) ?? MODES[0];
+  const busy = pending || actionPending;
 
   return (
     <div className="flex flex-col w-full max-w-3xl mx-auto h-[calc(100dvh-14rem)] md:h-[calc(100dvh-6rem)] min-h-[420px] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -141,29 +123,50 @@ export default function CopilotPanel({ modulesList, practiceModulesList, selecte
           <h2 className="text-sm font-extrabold text-slate-900 leading-tight">AI Copilot</h2>
           <p className="text-xs text-slate-600 flex items-center gap-1">
             <ShieldCheck size={12} className="text-emerald-600 shrink-0" aria-hidden="true" />
-            <span className="truncate">Ask mode · read-only, nothing is changed</span>
+            <span className="truncate">{current.hint}</span>
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => chatStore.clear()}
-          disabled={messages.length === 0 || pending}
-          aria-label="Clear chat"
-          className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-200 disabled:opacity-40 disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed"
-        >
-          <Trash2 size={18} aria-hidden="true" />
-        </button>
+        {mode === 'ask' && (
+          <button
+            type="button"
+            onClick={() => chatStore.clear()}
+            disabled={messages.length === 0 || pending}
+            aria-label="Clear chat"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-200 disabled:opacity-40 disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed"
+          >
+            <Trash2 size={18} aria-hidden="true" />
+          </button>
+        )}
+      </div>
+
+      {/* Mode switch */}
+      <div role="tablist" aria-label="Copilot mode" className="flex gap-1 px-3 pt-2 border-b border-slate-200">
+        {MODES.map(m => {
+          const Icon = m.icon;
+          const active = mode === m.id;
+          return (
+            <button
+              key={m.id}
+              role="tab"
+              type="button"
+              aria-selected={active}
+              disabled={busy && !active}
+              onClick={() => workStore.setMode(m.id)}
+              className={`min-h-[44px] px-4 rounded-t-xl text-sm font-extrabold flex items-center gap-1.5 border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                active ? 'border-indigo-600 text-indigo-800 bg-indigo-50' : 'border-transparent text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Icon size={16} aria-hidden="true" /> {m.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Scope selector */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-4 py-3 border-b border-slate-200">
         <label className="text-xs font-bold text-slate-700">
           Unit
-          <select
-            className={`${selectCls} mt-1 font-normal`}
-            value={unitId}
-            onChange={e => { setUnitId(e.target.value); setLessonId(''); setScreenId(''); }}
-          >
+          <select className={`${selectCls} mt-1 font-normal`} value={unitId} onChange={e => { setUnitId(e.target.value); setLessonId(''); setScreenId(''); }}>
             {units.length === 0 && <option value="">No units loaded</option>}
             {['Learning path', 'Practice arena'].map(g => {
               const items = units.filter(u => u.group === g);
@@ -177,111 +180,41 @@ export default function CopilotPanel({ modulesList, practiceModulesList, selecte
         </label>
         <label className="text-xs font-bold text-slate-700">
           Lesson
-          <select
-            className={`${selectCls} mt-1 font-normal`}
-            value={lessonId}
-            onChange={e => { setLessonId(e.target.value); setScreenId(''); }}
-          >
+          <select className={`${selectCls} mt-1 font-normal`} value={lessonId} onChange={e => { setLessonId(e.target.value); setScreenId(''); }}>
             <option value="">Whole unit</option>
             {lessons.map(l => <option key={l.id} value={l.id}>{l.title || l.id}</option>)}
           </select>
         </label>
         <label className="text-xs font-bold text-slate-700">
           Screen
-          <select
-            className={`${selectCls} mt-1 font-normal`}
-            value={screenId}
-            onChange={e => setScreenId(e.target.value)}
-            disabled={!lessonId}
-          >
+          <select className={`${selectCls} mt-1 font-normal`} value={screenId} onChange={e => setScreenId(e.target.value)} disabled={!lessonId}>
             <option value="">Whole lesson</option>
             {screens.map((s, i) => <option key={s.id} value={s.id}>{screenLabel(s, i)}</option>)}
           </select>
         </label>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" role="log" aria-live="polite" aria-label="Copilot conversation">
-        {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center gap-4 py-6">
-            <p className="text-sm text-slate-700 max-w-sm">
-              Pick a unit, lesson or screen above and ask anything about it. Copilot only sees what you selected.
-            </p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {SUGGESTIONS.map(s => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => void send(s)}
-                  disabled={!scope || pending}
-                  className="min-h-[44px] px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-xs font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {messages.map(m => (
-          <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div
-              className={`max-w-[90%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${
-                m.role === 'user'
-                  ? 'bg-indigo-600 text-white rounded-br-md'
-                  : m.role === 'error'
-                    ? 'bg-red-50 text-red-800 border border-red-200 rounded-bl-md flex gap-2'
-                    : 'bg-slate-100 text-slate-900 rounded-bl-md'
-              }`}
-            >
-              {m.role === 'error' && <AlertCircle size={16} className="shrink-0 mt-0.5" aria-hidden="true" />}
-              <div>
-                {m.role === 'user' && m.scopeLabel && (
-                  <div className="text-[11px] text-indigo-100 mb-0.5 truncate">{m.scopeLabel}</div>
-                )}
-                {m.role === 'assistant' ? renderInline(m.text) : m.text}
-              </div>
-            </div>
-          </div>
-        ))}
-
-        {pending && (
-          <div className="flex justify-start">
-            <div className="bg-slate-100 text-slate-700 rounded-2xl rounded-bl-md px-3.5 py-2.5 text-sm flex items-center gap-2">
-              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-              Copilot is thinking…
-            </div>
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Composer */}
-      <div className="px-3 py-3 border-t border-slate-200 bg-white">
-        <div className="flex items-end gap-2">
-          <label htmlFor="copilot-input" className="sr-only">Ask Copilot</label>
-          <textarea
-            id="copilot-input"
-            value={input}
-            onChange={e => setInput(e.target.value.slice(0, MAX_LEN))}
-            onKeyDown={onKeyDown}
-            rows={2}
-            placeholder={scope ? 'Ask about the selected content…' : 'Select a unit first'}
-            disabled={!scope}
-            className="flex-1 resize-none min-h-[44px] max-h-40 px-3 py-2.5 rounded-xl border border-slate-300 text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:border-indigo-500 disabled:bg-slate-100"
-          />
-          <button
-            type="button"
-            onClick={() => void send(input)}
-            disabled={!input.trim() || pending || !scope}
-            aria-label="Send question"
-            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-slate-300 disabled:text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500 transition-colors duration-150 cursor-pointer disabled:cursor-not-allowed"
-          >
-            <Send size={18} aria-hidden="true" />
+      {/* Audio outdated banner (counts screens whose narration is flagged stale, e.g. after an Apply) */}
+      {staleCount > 0 && !audioBannerHidden && (
+        <div role="status" className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-300 text-xs text-amber-950">
+          <Volume2 size={16} className="shrink-0" aria-hidden="true" />
+          <p className="flex-1 min-w-0">
+            <strong>Audio outdated on {staleCount} screen{staleCount === 1 ? '' : 's'}.</strong> Students still hear the old audio until it is regenerated.
+          </p>
+          {onOpenAudioQueue && (
+            <button type="button" onClick={onOpenAudioQueue}
+              className="min-h-[44px] px-3 rounded-xl border border-amber-500 bg-white text-xs font-extrabold text-amber-950 hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 cursor-pointer transition-colors duration-150 shrink-0">
+              Open audio queue
+            </button>
+          )}
+          <button type="button" onClick={() => setAudioBannerHidden(true)} aria-label="Hide audio notice"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 cursor-pointer transition-colors duration-150 shrink-0">
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
-        <p className="mt-1.5 text-[11px] text-slate-600">Enter to send · Shift+Enter for a new line · Copilot answers in English</p>
-      </div>
+      )}
+
+      {mode === 'ask' ? <AskView ctx={ctx} /> : <ActionView ctx={ctx} />}
     </div>
   );
 }

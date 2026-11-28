@@ -2,6 +2,9 @@
 import { supabase } from '../../../../lib/supabase';
 import type { CopilotScope, ModuleLike } from '../../../../lib/copilot/types';
 import { resolveScope } from '../../../../lib/copilot/server/context';
+import type { ActionResponse, AuditResponse } from '../../../../lib/copilot/server/service';
+
+export type { ActionResponse, AuditResponse };
 
 /** Server body limit is 1 MB; stay well under it. */
 const MAX_BODY_CHARS = 900_000;
@@ -17,25 +20,17 @@ const authHeader = async (): Promise<Record<string, string>> => {
   return { Authorization: `Bearer ${token}` };
 };
 
-/** Sends ONLY the selected scope, never the whole curriculum. */
-export const askCopilot = async (args: {
-  modules: ModuleLike[];
-  scope: CopilotScope;
-  question: string;
-  history: ChatTurn[];
-}): Promise<string> => {
-  const scoped = resolveScope(args.modules, args.scope);
-  if (scoped.error) throw new CopilotClientError(scoped.error);
-  const body = JSON.stringify({ scope: args.scope, modules: scoped.modules, question: args.question, history: args.history });
-  if (body.length > MAX_BODY_CHARS) {
+const post = async (path: string, body: unknown): Promise<any> => {
+  const text = JSON.stringify(body);
+  if (text.length > MAX_BODY_CHARS) {
     throw new CopilotClientError('This selection is too large. Pick a single lesson or screen.');
   }
   let res: Response;
   try {
-    res = await fetch('/api/copilot/ask', {
+    res = await fetch(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-      body,
+      body: text,
     });
   } catch (e) {
     if (e instanceof CopilotClientError) throw e;
@@ -45,5 +40,29 @@ export const askCopilot = async (args: {
   if (!res.ok || !out.success) {
     throw new CopilotClientError(out.error || `Request failed (${res.status}).`);
   }
+  return out;
+};
+
+/** Sends ONLY the selected scope, never the whole curriculum. */
+const scoped = (modules: ModuleLike[], scope: CopilotScope): ModuleLike[] => {
+  const r = resolveScope(modules, scope);
+  if (r.error) throw new CopilotClientError(r.error);
+  return r.modules;
+};
+
+export const askCopilot = async (args: { modules: ModuleLike[]; scope: CopilotScope; question: string; history: ChatTurn[] }): Promise<string> => {
+  const out = await post('/api/copilot/ask', { scope: args.scope, modules: scoped(args.modules, args.scope), question: args.question, history: args.history });
   return String(out.answer ?? '');
+};
+
+/** Action mode: the AI proposes edits. NOTHING is saved by this call. */
+export const proposeActions = async (args: { modules: ModuleLike[]; scope: CopilotScope; instruction: string; history?: ChatTurn[] }): Promise<ActionResponse> => {
+  const out = await post('/api/copilot/action', { scope: args.scope, modules: scoped(args.modules, args.scope), instruction: args.instruction, history: args.history ?? [] });
+  return out as ActionResponse;
+};
+
+/** Audit mode: read-only scan. NOTHING is saved by this call. */
+export const runAuditScan = async (args: { modules: ModuleLike[]; scope: CopilotScope }): Promise<AuditResponse> => {
+  const out = await post('/api/copilot/audit', { scope: args.scope, modules: scoped(args.modules, args.scope) });
+  return out as AuditResponse;
 };

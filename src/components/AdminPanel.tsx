@@ -6417,8 +6417,18 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
             <CopilotPanel
               modulesList={modulesList.filter(isModuleInSelectedWorld)}
               practiceModulesList={practiceModulesList.filter(isModuleInSelectedWorld)}
+              fullModulesList={modulesList}
+              fullPracticeList={practiceModulesList}
               selectedModuleId={selectedModuleId}
               selectedLessonId={selectedLessonId}
+              onCommit={(nextSpace, nextPrac) => {
+                // Same save path as the other admin editors: state + saveCurriculumToStorage (hash diff, only changed lessons).
+                setModulesList(nextSpace as Module[]);
+                setPracticeModulesList(nextPrac as Module[]);
+                saveCurriculumToStorage(nextSpace as Module[], nextPrac as Module[]);
+                setRawJsonText(JSON.stringify({ spaceCurriculum: nextSpace, practiceCurriculum: nextPrac }, null, 2));
+              }}
+              onOpenAudioQueue={() => setActiveTab('bulk-narrations')}
             />
           )}
 
