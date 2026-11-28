@@ -152,7 +152,22 @@ export default function CopilotPanel({
     const history: ChatTurn[] = chatStore
       .getState()
       .messages.filter(m => m.role !== 'error')
-      .map(m => ({ role: m.role as 'user' | 'assistant', text: m.text }));
+      .map(m => {
+        let fullText = m.text;
+        if (m.proposal && m.proposal.actions.length > 0) {
+          const actionDetails = m.proposal.actions
+            .map(a => `[Proposed edit on ${a.screenId}: ${a.reason || ''} Changes: ${JSON.stringify(a.fields)}]`)
+            .join('\n');
+          fullText += `\n${actionDetails}`;
+        }
+        if (m.audit && m.audit.findings.length > 0) {
+          const findingsDetails = m.audit.findings
+            .map((f, i) => `[Audit finding ${i + 1} on ${f.screenId}: ${f.problem} - Why: ${f.why}]`)
+            .join('\n');
+          fullText += `\n${findingsDetails}`;
+        }
+        return { role: m.role as 'user' | 'assistant', text: fullText };
+      });
 
     chatStore.add({ id: newMessageId(), role: 'user', text, scopeLabel });
     setInput('');
