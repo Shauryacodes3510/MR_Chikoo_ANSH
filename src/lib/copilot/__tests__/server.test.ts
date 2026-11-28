@@ -111,7 +111,7 @@ describe('audit', () => {
     expect(r.findings).toHaveLength(1);
     expect(r.findings[0].fixAction?.fields).toEqual({ correctOptionIndex: 1 });
     expect(r.findings[0].fixResult?.status).toBe('ok');
-    expect(r.skippedUnsupported).toBe(1); // content_screen
+    expect(r.skippedUnsupported).toBe(0);
   });
   it('drops hallucinated ids and keeps invalid fixes as finding without fix', async () => {
     const reply = JSON.stringify({ findings: [
@@ -163,6 +163,6 @@ describe('unified chat', () => {
     const r = await runChat(llm, { modules: makeModules(), scope: lessonScope, message: 'audit this lesson please' });
     expect(r.intent).toBe('audit');
     expect(r.findings).toEqual([]);
-    expect(r.scanned).toBe(2);
+    expect(r.scanned).toBe(3);
   });
 });

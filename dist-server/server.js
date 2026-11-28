@@ -1037,15 +1037,15 @@ Return ONLY valid JSON matching this schema:
   return await callGeminiStageWithTimeout(prompt, 14e3);
 }
 async function executeStageStory(job) {
-  const plan2 = job.stageResults.plan || {};
+  const plan3 = job.stageResults.plan || {};
   const { unitTitle, unitContext, previousLessonMemory, concept } = job.requestParams;
   const characters = unitContext?.characters && Array.isArray(unitContext.characters) && unitContext.characters.length > 0 ? unitContext.characters.map((c) => c.name).join(", ") : "Chikoo and Byte";
   const prompt = `You are a narrative writer for "Chikoo".
-Write the opening STORY SCREEN (Screen 1) for lesson "${plan2.lessonTitle || concept}" in Unit "${unitTitle}".
+Write the opening STORY SCREEN (Screen 1) for lesson "${plan3.lessonTitle || concept}" in Unit "${unitTitle}".
 
 STORY CONTEXT:
 - Characters: ${characters}
-- Story Hook: ${plan2.storyHook || "The crew encounters an unexpected mystery."}
+- Story Hook: ${plan3.storyHook || "The crew encounters an unexpected mystery."}
 - Previous Cliffhanger: ${previousLessonMemory?.cliffhangerOrHook || "A strange radar signal blinks on screen!"}
 
 REQUIREMENTS:
@@ -1076,7 +1076,7 @@ Return ONLY valid JSON matching this schema:
   return await callGeminiStageWithTimeout(prompt, 12e3);
 }
 async function executeStageConcept(job) {
-  const plan2 = job.stageResults.plan || {};
+  const plan3 = job.stageResults.plan || {};
   const { concept, objective } = job.requestParams;
   const prompt = `You are an educational explainer for kids (aged 8-15) on "Chikoo".
 Write the CORE CONCEPT INTRODUCTION SCREEN (Screen 2) for: "${concept}".
@@ -1084,7 +1084,7 @@ Write the CORE CONCEPT INTRODUCTION SCREEN (Screen 2) for: "${concept}".
 PARAMETERS:
 - Target Concept: "${concept}"
 - Objective: "${objective || `Understand ${concept}`}"
-- Analogy Idea: "${plan2.conceptAnalogyBrief || "Everyday relatable comparison"}"
+- Analogy Idea: "${plan3.conceptAnalogyBrief || "Everyday relatable comparison"}"
 
 REQUIREMENTS:
 1. Must be under 60 words total in body.
@@ -1108,7 +1108,7 @@ Return ONLY valid JSON matching this schema:
   return await callGeminiStageWithTimeout(prompt, 12e3);
 }
 async function executeStageQuestions(job) {
-  const plan2 = job.stageResults.plan || {};
+  const plan3 = job.stageResults.plan || {};
   const { concept, difficulty = "Medium" } = job.requestParams;
   const prompt = `You are an interactive learning designer for "Chikoo".
 Create the 4 INTERACTIVE QUESTION SCREENS for concept "${concept}" (Screens 3 to 6).
@@ -1143,13 +1143,13 @@ Return ONLY valid JSON matching this schema:
   return Array.isArray(res.questions) ? res.questions : Array.isArray(res) ? res : [];
 }
 function executeStageCompilation(job) {
-  const plan2 = job.stageResults.plan || {};
+  const plan3 = job.stageResults.plan || {};
   const story = job.stageResults.story;
   const conceptScreen = job.stageResults.concept;
   const questions = job.stageResults.questions || [];
   const { concept, difficulty = "Medium", lessonTitle } = job.requestParams;
   const genId = `l_${Date.now().toString().slice(-6)}`;
-  const finalTitle = lessonTitle?.trim() || plan2.lessonTitle || `\u{1F680} ${concept}`;
+  const finalTitle = lessonTitle?.trim() || plan3.lessonTitle || `\u{1F680} ${concept}`;
   const challenges = [];
   if (story) {
     challenges.push({
@@ -1193,20 +1193,20 @@ function executeStageCompilation(job) {
   const lesson = {
     id: genId,
     title: finalTitle,
-    description: plan2.pedagogicalOutline || `Learn and apply ${concept} with Chikoo & Byte.`,
+    description: plan3.pedagogicalOutline || `Learn and apply ${concept} with Chikoo & Byte.`,
     category: concept,
     difficulty,
-    xpReward: plan2.xpReward || (difficulty === "Hard" ? 150 : difficulty === "Medium" ? 120 : 100),
+    xpReward: plan3.xpReward || (difficulty === "Hard" ? 150 : difficulty === "Medium" ? 120 : 100),
     challenges
   };
   const lessonMemory = {
     lessonId: genId,
     lessonTitle: finalTitle,
     conceptTaught: concept,
-    storyEvent: plan2.storyHook || `Chikoo and Byte explored ${concept} and calibrated their sensors.`,
+    storyEvent: plan3.storyHook || `Chikoo and Byte explored ${concept} and calibrated their sensors.`,
     characterStatus: "Energized, sensors calibrated, ready for the next challenge.",
     cliffhangerOrHook: "A new anomaly is flashing on the navigation console!",
-    keyTakeaway: plan2.keyTakeaway || `${concept} empowers smart, structured problem solving.`,
+    keyTakeaway: plan3.keyTakeaway || `${concept} empowers smart, structured problem solving.`,
     dateGenerated: (/* @__PURE__ */ new Date()).toISOString()
   };
   return { lesson, lessonMemory };
@@ -2294,8 +2294,93 @@ var mcqHandler = {
   plan
 };
 
+// src/lib/copilot/handlers/content.ts
+var CONTENT_TYPES = ["content_screen", "visual_lesson_screen"];
+var CONTENT_FIELDS = [
+  "heading",
+  "subheading",
+  "contentBody",
+  "badge",
+  "quote",
+  "bottomMessage",
+  "mascotMessage"
+];
+var LIMITS2 = {
+  heading: 300,
+  subheading: 400,
+  contentBody: 3e3,
+  badge: 150,
+  quote: 500,
+  bottomMessage: 400,
+  mascotMessage: 400
+};
+var fail2 = (errors) => ({
+  errors,
+  warnings: [],
+  diff: [],
+  mirrorsWritten: [],
+  spokenTextChanged: false
+});
+var plan2 = (screen, fields) => {
+  const errors = checkFieldNames(fields, CONTENT_FIELDS, screen.type);
+  if (Object.keys(fields).length === 0) errors.push("No fields to change.");
+  if (errors.length) return fail2(errors);
+  const warnings = [];
+  const diff = [];
+  let next = { ...screen };
+  let spokenTextChanged = false;
+  const mirrorsWritten = [];
+  const cs = isPlainObject(screen.contentScreen) ? { ...screen.contentScreen } : {};
+  let contentScreenChanged = false;
+  for (const field of CONTENT_FIELDS) {
+    if (!(field in fields)) continue;
+    const raw = fields[field];
+    const max = LIMITS2[field] || 2e3;
+    const read = readText(field, raw, max, { allowEmpty: field !== "heading" && field !== "contentBody" });
+    if (read.error) {
+      errors.push(read.error);
+      continue;
+    }
+    const val = read.value;
+    const oldVal = cs[field] ?? screen[field] ?? "";
+    if (sameValue(oldVal, val)) continue;
+    diff.push({ field, before: oldVal, after: val, sensitive: false });
+    next[field] = val;
+    cs[field] = val;
+    contentScreenChanged = true;
+    if (field === "heading" || field === "contentBody" || field === "subheading" || field === "mascotMessage") {
+      spokenTextChanged = true;
+    }
+    if (field === "contentBody") {
+      const exp = withExplanationText(next, val);
+      next = exp.screen;
+      mirrorsWritten.push(...exp.mirrorsWritten);
+    }
+  }
+  if (contentScreenChanged) {
+    next.contentScreen = cs;
+    next.visualLessonScreen = { ...cs };
+    mirrorsWritten.push("contentScreen", "visualLessonScreen");
+  }
+  if (errors.length) return fail2(errors);
+  if (diff.length === 0) return fail2(["The proposed changes are identical to the current screen."]);
+  return {
+    next,
+    errors: [],
+    warnings,
+    diff,
+    mirrorsWritten,
+    spokenTextChanged
+  };
+};
+var contentHandler = {
+  actionName: "updateContentScreen",
+  types: CONTENT_TYPES,
+  plan: plan2
+};
+
 // src/lib/copilot/handlers/index.ts
-var HANDLERS = [mcqHandler];
+var HANDLERS = [mcqHandler, contentHandler];
 var findHandlerByAction = (actionName) => HANDLERS.find((h) => h.actionName === actionName);
 
 // src/lib/copilot/applyActions.ts
@@ -2446,30 +2531,38 @@ If something really is missing, name the exact screen id and type and list which
 Be short, concrete, and helpful. Mention screen ids when you refer to a screen.`;
 var ACTION_SYSTEM = `${COMMON}
 MODE: ACTION. Turn the admin's request into edits and return ONLY valid JSON, no markdown:
-{"actions":[{"action":"updateMcq","lessonId":"<id>","screenId":"<id>","fields":{...},"reason":"<short why>"}],"message":"<optional short note>"}
+{"actions":[{"action":"<actionName>","lessonId":"<id>","screenId":"<id>","fields":{...},"reason":"<short why>"}],"message":"<optional short note>"}
+Supported actions by screen type:
+1. Multiple Choice & True/False (types c1_multiple_choice, c9_true_false):
+   - action: "updateMcq"
+   - allowed fields: question, options (c1 only, same count, all different), correctOptionIndex (0-based index; for c9: 0 = True, 1 = False), mascotMessage, explanation (plain text), xpValue (0-1000), difficulty
+2. Content Screens (types content_screen, visual_lesson_screen):
+   - action: "updateContentScreen"
+   - allowed fields: heading, subheading, contentBody, badge, quote, bottomMessage, mascotMessage
 Rules:
-- Only screens with "editable": true and type c1_multiple_choice or c9_true_false, using action "updateMcq".
-- Allowed fields: question, options (c1 only, same count, all different), correctOptionIndex (0-based index into options; for c9: 0 = True, 1 = False), mascotMessage, explanation (plain text string), xpValue (integer 0-1000), difficulty.
-- To change the right answer, give correctOptionIndex. Never write answer text, ids, types, audio, urls or any other field.
+- To change an MCQ answer, give correctOptionIndex. Never write answer text, ids, types, audio, urls or any other field.
 - Change only what the admin asked. Do not change a question's meaning unless asked. Include only changed fields.
-- When rewriting questions or options, apply the MASTER QUALITY STANDARDS: keep vocabulary friendly for 8\u201314 year olds, balance option lengths, use relatable examples, and maintain perfect spelling and grammar.
+- When rewriting text or options, apply MASTER QUALITY STANDARDS: keep vocabulary friendly for 8\u201314 year olds, balance option lengths, use relatable examples, and maintain perfect spelling and grammar.
 - Use only lessonId/screenId values that appear in the data. If nothing can be done, return {"actions":[],"message":"<why>"}.`;
 var AUDIT_SYSTEM = `${COMMON}
-MODE: AUDIT (read-only). Perform a comprehensive curriculum quality audit on each editable screen according to the MASTER QUALITY STANDARDS:
+MODE: AUDIT (read-only). Perform a comprehensive curriculum quality audit across ALL screens (MCQs, Content screens, Story scenes, Visual explainers) according to the MASTER QUALITY STANDARDS:
 Check for:
-1. Factually wrong marked answer (correctOptionIndex) or missing/null answer.
+1. Factually wrong marked answer (correctOptionIndex) or missing/null answer in questions.
 2. Multiple options that could be correct, or ambiguous questions.
 3. Explanation contradicting the marked answer.
-4. Spelling errors, typos, grammatical mistakes, or missing question marks.
+4. Spelling errors, typos, grammatical mistakes, or missing question marks in ANY screen (content, story dialogues, questions).
 5. Overly complex, academic, or confusing English vocabulary not suited for 8\u201314 year old kids.
 6. Severe "longest option bias" where the correct answer is obviously longer than all distractors.
 7. Silly or unhelpful distractors that don't test real understanding.
+8. Weak, confusing, or boring story dialogues or content body text.
 
 Return ONLY valid JSON, no markdown:
 {"findings":[{"lessonId":"<id>","screenId":"<id>","severity":"error|warning","problem":"<what is wrong>","why":"<why it is an issue for students>","fix":{"fields":{...}}}]}
 
 - severity: "error" for wrong answers, multiple correct answers, missing answers, or contradictory explanations. "warning" for spelling/grammar errors, hard vocabulary, unbalanced option lengths, or weak distractors.
-- "fix" is optional but highly recommended: provide the corrected fields (question, options, correctOptionIndex, mascotMessage, explanation) so the admin can fix it in 1 click.
+- "fix" is optional but highly recommended for editable screens:
+  - For MCQs/TF: fields can include question, options, correctOptionIndex, mascotMessage, explanation.
+  - For Content screens: fields can include heading, subheading, contentBody, badge, quote, bottomMessage, mascotMessage.
 - Report real problems only. If a screen is fine, do not mention it. If all is fine return {"findings":[]}.
 - Use only lessonId/screenId values that appear in the data.`;
 var CHAT_SYSTEM = `${COMMON}
@@ -2482,13 +2575,12 @@ Return ONLY valid JSON:
 {"intent":"audit","reply":"I am auditing the screens for content errors, spelling/grammar, vocabulary difficulty, and distractor quality."}
 
 2. INTENT "action":
-When the admin asks to change, update, fix, simplify, or edit content of editable screens (c1_multiple_choice or c9_true_false):
+When the admin asks to change, update, fix, simplify, or edit content of editable screens (MCQs, True/False, or Content screens):
 Return ONLY valid JSON:
-{"intent":"action","reply":"<friendly explanation of what you updated>","actions":[{"action":"updateMcq","lessonId":"<id>","screenId":"<id>","fields":{...},"reason":"<short why>"}]}
+{"intent":"action","reply":"<friendly explanation of what you updated>","actions":[{"action":"<updateMcq|updateContentScreen>","lessonId":"<id>","screenId":"<id>","fields":{...},"reason":"<short why>"}]}
 Rules for actions:
-- Only screens with "editable": true and type c1_multiple_choice or c9_true_false, using action "updateMcq".
-- Allowed fields: question, options (c1 only, same count, all different), correctOptionIndex (0-based index into options; for c9: 0 = True, 1 = False), mascotMessage, explanation (plain text string), xpValue (integer 0-1000), difficulty.
-- To change the right answer, give correctOptionIndex. Never write answer text, ids, types, audio, urls or any other field.
+- For c1_multiple_choice / c9_true_false, use action "updateMcq" (fields: question, options, correctOptionIndex, mascotMessage, explanation, xpValue, difficulty).
+- For content_screen / visual_lesson_screen, use action "updateContentScreen" (fields: heading, subheading, contentBody, badge, quote, bottomMessage, mascotMessage).
 - Change only what the admin asked. Include only changed fields.
 - Strictly adhere to MASTER QUALITY STANDARDS: student-friendly vocabulary (ages 8\u201314), balanced option lengths, plausible distractors, and clean grammar/spelling.
 - If the screen is not editable or nothing can be done, return {"intent":"ask","reply":"<explain why it cannot be changed>"}
@@ -2529,7 +2621,7 @@ var sanitize = (v, depth = 0) => {
 var toAiScreenView = (screen) => {
   const editable = isEditableType(screen.type);
   const base = { id: screen.id, type: screen.type, editable };
-  if (editable) {
+  if (screen.type === "c1_multiple_choice" || screen.type === "c9_true_false") {
     const options = screen.options;
     const idx = Array.isArray(options) && typeof screen.correctAnswer === "string" ? options.indexOf(screen.correctAnswer) : -1;
     return {
@@ -2541,9 +2633,12 @@ var toAiScreenView = (screen) => {
       explanation: getExplanationText(screen)
     };
   }
-  if (screen.type === "content_screen") {
+  if (screen.type === "content_screen" || screen.type === "visual_lesson_screen") {
     const cs = isPlainObject(screen.contentScreen) ? screen.contentScreen : screen;
-    return { ...base, ...pick(cs, ["heading", "subheading", "contentBody", "badge", "quote", "bottomMessage", "mascotMessage"]) };
+    return {
+      ...base,
+      ...pick(cs, ["heading", "subheading", "contentBody", "badge", "quote", "bottomMessage", "mascotMessage"])
+    };
   }
   const { id: _id, type: _type, ...rest } = screen;
   return { ...base, ...sanitize(rest) };
@@ -2584,17 +2679,18 @@ var serializeView = (view) => {
   }
   return { json };
 };
-var listEditableScreens = (scoped) => {
+var listAuditableScreens = (scoped) => {
   const items = [];
   let skipped = 0;
   for (const m of scoped)
     for (const l of m.lessons || [])
       for (const c of l.challenges || []) {
-        if (isEditableType(c.type)) items.push({ lessonId: l.id, screen: c });
+        if (c && c.id && c.type) items.push({ lessonId: l.id, screen: c });
         else skipped++;
       }
   return { items, skipped };
 };
+var listEditableScreens = listAuditableScreens;
 
 // src/lib/copilot/server/service.ts
 var MAX_INSTRUCTION_CHARS = 2e3;

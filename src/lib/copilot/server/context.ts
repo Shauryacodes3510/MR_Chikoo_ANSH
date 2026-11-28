@@ -53,7 +53,7 @@ const sanitize = (v: unknown, depth = 0): unknown => {
 export const toAiScreenView = (screen: ScreenLike): AiScreenView => {
   const editable = isEditableType(screen.type);
   const base = { id: screen.id, type: screen.type, editable };
-  if (editable) {
+  if (screen.type === 'c1_multiple_choice' || screen.type === 'c9_true_false') {
     const options: unknown = screen.options;
     const idx = Array.isArray(options) && typeof screen.correctAnswer === 'string' ? options.indexOf(screen.correctAnswer) : -1;
     return {
@@ -65,12 +65,16 @@ export const toAiScreenView = (screen: ScreenLike): AiScreenView => {
       explanation: getExplanationText(screen),
     };
   }
-  if (screen.type === 'content_screen') {
+  if (screen.type === 'content_screen' || screen.type === 'visual_lesson_screen') {
     const cs = isPlainObject(screen.contentScreen) ? screen.contentScreen : screen;
-    return { ...base, ...pick(cs, ['heading', 'subheading', 'contentBody', 'badge', 'quote', 'bottomMessage', 'mascotMessage']) };
+    return {
+      ...base,
+      ...pick(cs, ['heading', 'subheading', 'contentBody', 'badge', 'quote', 'bottomMessage', 'mascotMessage']),
+    };
   }
-  // Other types: read-only, but the AI gets the real data (options, answers, pairs, ...),
-  // minus audio/hash/mirror fields, so "Ask" can really check them.
+  // Story screens, visual screens, and all other challenge types:
+  // AI gets the real data (dialogues, scenes, panels, options, answers, pairs...),
+  // minus audio/hash/mirror fields.
   const { id: _id, type: _type, ...rest } = screen;
   return { ...base, ...(sanitize(rest) as Record<string, unknown>) };
 };
@@ -124,17 +128,18 @@ export const serializeView = (view: AiScopeView): { json: string } | { error: st
   return { json };
 };
 
-/** All screens in scope that an Action/Audit can edit (for the audit batches). */
-export const listEditableScreens = (scoped: ModuleLike[]) => {
+/** All screens in scope for the audit batches. Audits all content, story, visual, and challenge screens. */
+export const listAuditableScreens = (scoped: ModuleLike[]) => {
   const items: { lessonId: string; screen: ScreenLike }[] = [];
   let skipped = 0;
   for (const m of scoped)
     for (const l of m.lessons || [])
       for (const c of l.challenges || []) {
-        if (isEditableType(c.type)) items.push({ lessonId: l.id, screen: c });
+        if (c && c.id && c.type) items.push({ lessonId: l.id, screen: c });
         else skipped++;
       }
   return { items, skipped };
 };
+export const listEditableScreens = listAuditableScreens;
 
 export { findHandlerByAction };

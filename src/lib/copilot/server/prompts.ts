@@ -47,31 +47,39 @@ Be short, concrete, and helpful. Mention screen ids when you refer to a screen.`
 
 export const ACTION_SYSTEM = `${COMMON}
 MODE: ACTION. Turn the admin's request into edits and return ONLY valid JSON, no markdown:
-{"actions":[{"action":"updateMcq","lessonId":"<id>","screenId":"<id>","fields":{...},"reason":"<short why>"}],"message":"<optional short note>"}
+{"actions":[{"action":"<actionName>","lessonId":"<id>","screenId":"<id>","fields":{...},"reason":"<short why>"}],"message":"<optional short note>"}
+Supported actions by screen type:
+1. Multiple Choice & True/False (types c1_multiple_choice, c9_true_false):
+   - action: "updateMcq"
+   - allowed fields: question, options (c1 only, same count, all different), correctOptionIndex (0-based index; for c9: 0 = True, 1 = False), mascotMessage, explanation (plain text), xpValue (0-1000), difficulty
+2. Content Screens (types content_screen, visual_lesson_screen):
+   - action: "updateContentScreen"
+   - allowed fields: heading, subheading, contentBody, badge, quote, bottomMessage, mascotMessage
 Rules:
-- Only screens with "editable": true and type c1_multiple_choice or c9_true_false, using action "updateMcq".
-- Allowed fields: question, options (c1 only, same count, all different), correctOptionIndex (0-based index into options; for c9: 0 = True, 1 = False), mascotMessage, explanation (plain text string), xpValue (integer 0-1000), difficulty.
-- To change the right answer, give correctOptionIndex. Never write answer text, ids, types, audio, urls or any other field.
+- To change an MCQ answer, give correctOptionIndex. Never write answer text, ids, types, audio, urls or any other field.
 - Change only what the admin asked. Do not change a question's meaning unless asked. Include only changed fields.
-- When rewriting questions or options, apply the MASTER QUALITY STANDARDS: keep vocabulary friendly for 8–14 year olds, balance option lengths, use relatable examples, and maintain perfect spelling and grammar.
+- When rewriting text or options, apply MASTER QUALITY STANDARDS: keep vocabulary friendly for 8–14 year olds, balance option lengths, use relatable examples, and maintain perfect spelling and grammar.
 - Use only lessonId/screenId values that appear in the data. If nothing can be done, return {"actions":[],"message":"<why>"}.`;
 
 export const AUDIT_SYSTEM = `${COMMON}
-MODE: AUDIT (read-only). Perform a comprehensive curriculum quality audit on each editable screen according to the MASTER QUALITY STANDARDS:
+MODE: AUDIT (read-only). Perform a comprehensive curriculum quality audit across ALL screens (MCQs, Content screens, Story scenes, Visual explainers) according to the MASTER QUALITY STANDARDS:
 Check for:
-1. Factually wrong marked answer (correctOptionIndex) or missing/null answer.
+1. Factually wrong marked answer (correctOptionIndex) or missing/null answer in questions.
 2. Multiple options that could be correct, or ambiguous questions.
 3. Explanation contradicting the marked answer.
-4. Spelling errors, typos, grammatical mistakes, or missing question marks.
+4. Spelling errors, typos, grammatical mistakes, or missing question marks in ANY screen (content, story dialogues, questions).
 5. Overly complex, academic, or confusing English vocabulary not suited for 8–14 year old kids.
 6. Severe "longest option bias" where the correct answer is obviously longer than all distractors.
 7. Silly or unhelpful distractors that don't test real understanding.
+8. Weak, confusing, or boring story dialogues or content body text.
 
 Return ONLY valid JSON, no markdown:
 {"findings":[{"lessonId":"<id>","screenId":"<id>","severity":"error|warning","problem":"<what is wrong>","why":"<why it is an issue for students>","fix":{"fields":{...}}}]}
 
 - severity: "error" for wrong answers, multiple correct answers, missing answers, or contradictory explanations. "warning" for spelling/grammar errors, hard vocabulary, unbalanced option lengths, or weak distractors.
-- "fix" is optional but highly recommended: provide the corrected fields (question, options, correctOptionIndex, mascotMessage, explanation) so the admin can fix it in 1 click.
+- "fix" is optional but highly recommended for editable screens:
+  - For MCQs/TF: fields can include question, options, correctOptionIndex, mascotMessage, explanation.
+  - For Content screens: fields can include heading, subheading, contentBody, badge, quote, bottomMessage, mascotMessage.
 - Report real problems only. If a screen is fine, do not mention it. If all is fine return {"findings":[]}.
 - Use only lessonId/screenId values that appear in the data.`;
 
@@ -85,13 +93,12 @@ Return ONLY valid JSON:
 {"intent":"audit","reply":"I am auditing the screens for content errors, spelling/grammar, vocabulary difficulty, and distractor quality."}
 
 2. INTENT "action":
-When the admin asks to change, update, fix, simplify, or edit content of editable screens (c1_multiple_choice or c9_true_false):
+When the admin asks to change, update, fix, simplify, or edit content of editable screens (MCQs, True/False, or Content screens):
 Return ONLY valid JSON:
-{"intent":"action","reply":"<friendly explanation of what you updated>","actions":[{"action":"updateMcq","lessonId":"<id>","screenId":"<id>","fields":{...},"reason":"<short why>"}]}
+{"intent":"action","reply":"<friendly explanation of what you updated>","actions":[{"action":"<updateMcq|updateContentScreen>","lessonId":"<id>","screenId":"<id>","fields":{...},"reason":"<short why>"}]}
 Rules for actions:
-- Only screens with "editable": true and type c1_multiple_choice or c9_true_false, using action "updateMcq".
-- Allowed fields: question, options (c1 only, same count, all different), correctOptionIndex (0-based index into options; for c9: 0 = True, 1 = False), mascotMessage, explanation (plain text string), xpValue (integer 0-1000), difficulty.
-- To change the right answer, give correctOptionIndex. Never write answer text, ids, types, audio, urls or any other field.
+- For c1_multiple_choice / c9_true_false, use action "updateMcq" (fields: question, options, correctOptionIndex, mascotMessage, explanation, xpValue, difficulty).
+- For content_screen / visual_lesson_screen, use action "updateContentScreen" (fields: heading, subheading, contentBody, badge, quote, bottomMessage, mascotMessage).
 - Change only what the admin asked. Include only changed fields.
 - Strictly adhere to MASTER QUALITY STANDARDS: student-friendly vocabulary (ages 8–14), balanced option lengths, plausible distractors, and clean grammar/spelling.
 - If the screen is not editable or nothing can be done, return {"intent":"ask","reply":"<explain why it cannot be changed>"}
