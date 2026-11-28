@@ -81,21 +81,10 @@ export const DesktopLandingPage = memo(function DesktopLandingPage({
       soundManager.play('click');
     } catch (_) {}
 
-    const isLearnDomain = typeof window !== 'undefined' && (
-      window.location.hostname === 'learn.mrchikoo.com' ||
-      window.location.hostname.startsWith('learn.') ||
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1'
-    );
-
-    if (isLearnDomain) {
-      if (isAuthenticated && onContinueToApp) {
-        onContinueToApp();
-      } else {
-        onStartAdventure();
-      }
+    if (isAuthenticated && onContinueToApp) {
+      onContinueToApp();
     } else {
-      window.location.href = 'https://learn.mrchikoo.com/signup';
+      onStartAdventure();
     }
   }, [isAuthenticated, onContinueToApp, onStartAdventure]);
 

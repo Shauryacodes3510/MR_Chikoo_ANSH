@@ -2893,16 +2893,11 @@ function AppContent() {
   // -------------------------------------------------------------------------
   // Routing specification:
   // 1. /landing or /home -> New Chikoo Landing Page (Navbar, Hero, Features, etc.)
-  // 2. learn.mrchikoo.com (or App Portal):
+  // 2. /signup or /login -> AuthScreen (direct signup / login flow)
   //    - If user cache exists in localStorage: Loading screen -> App opens directly!
-  //    - If no cache exists: Redirects to Sign In (AuthScreen in login mode)
+  //    - If no cache exists: Shows AuthScreen in signup or login mode
   // =========================================================================
   const cleanPath = currentPath.toLowerCase().split('?')[0].replace(/\/+$/, '') || '/';
-
-  const isLearnDomain = typeof window !== 'undefined' && (
-    window.location.hostname === 'learn.mrchikoo.com' ||
-    window.location.hostname.startsWith('learn.')
-  );
 
   const hasLocalUserCache = useMemo(() => {
     if (typeof window === 'undefined' || typeof localStorage === 'undefined') return false;
@@ -2926,7 +2921,7 @@ function AppContent() {
   }, [sessionUser]);
 
   const isLandingRoute = cleanPath === '/landing' || cleanPath === '/home';
-  const shouldShowLandingPage = isLandingRoute || (isDesktop && cleanPath === '/' && !isLearnDomain && !hasLocalUserCache);
+  const shouldShowLandingPage = isLandingRoute || (cleanPath === '/' && !hasLocalUserCache);
 
   if (shouldShowLandingPage) {
     return (
@@ -2934,29 +2929,17 @@ function AppContent() {
         <Suspense fallback={<div className="fixed inset-0 w-full h-full bg-[#FCFDFE]" />}>
           <DesktopLandingPage
             onStartAdventure={() => {
-              if (isLearnDomain) {
-                if (!showAuthView && hasLocalUserCache) {
-                  navigateTo('/app');
-                } else {
-                  navigateTo('/signup');
-                }
+              if (!showAuthView && hasLocalUserCache) {
+                navigateTo('/app');
               } else {
-                window.location.href = 'https://learn.mrchikoo.com/signup';
+                navigateTo('/signup');
               }
             }}
             onSignIn={() => {
-              if (isLearnDomain) {
-                navigateTo('/login');
-              } else {
-                window.location.href = 'https://learn.mrchikoo.com/login';
-              }
+              navigateTo('/login');
             }}
             onContinueToApp={() => {
-              if (isLearnDomain) {
-                navigateTo('/app');
-              } else {
-                window.location.href = 'https://learn.mrchikoo.com/app';
-              }
+              navigateTo('/app');
             }}
             isAuthenticated={!showAuthView && !isCheckingUserStatus && !!sessionUser}
             username={username || sessionUser || 'Explorer'}
@@ -2967,7 +2950,7 @@ function AppContent() {
     );
   }
 
-  if (isDesktop && (cleanPath === '/login' || cleanPath === '/signup')) {
+  if (cleanPath === '/login' || cleanPath === '/signup') {
     if (isRestoringSession || isCheckingUserStatus) {
       return (
         <ErrorBoundary>
@@ -2999,7 +2982,7 @@ function AppContent() {
     }
   }
 
-  if (isDesktop && (cleanPath === '/' || cleanPath === '/app' || cleanPath.startsWith('/app'))) {
+  if (cleanPath === '/' || cleanPath === '/app' || cleanPath.startsWith('/app')) {
     if (isRestoringSession || isCheckingUserStatus) {
       return (
         <ErrorBoundary>
@@ -3013,7 +2996,7 @@ function AppContent() {
           <div className="fixed inset-0 w-full h-full bg-slate-900 overflow-y-auto">
             <Suspense fallback={<div className="fixed inset-0 bg-slate-950" />}>
               <AuthScreen 
-                initialMode="login"
+                initialMode={cleanPath === '/login' ? 'login' : 'signup'}
                 onLoginSuccess={(email, isNew) => {
                   handleLoginSuccess(email, isNew);
                   navigateTo('/app');
