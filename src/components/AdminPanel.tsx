@@ -4968,7 +4968,7 @@ export default function AdminPanel({ onClose, currentUserEmail, isDbAdmin, onPro
       )}
 
       {/* RIGHT COLUMN: INTERACTIVE CREATOR WORKSPACE CANVAS */}
-      <main className={`flex-1 overflow-y-auto p-3 sm:p-5 md:p-8 space-y-4 md:space-y-5 bg-[#f8fafc] pb-28 md:pb-8 ${mobileViewMode === 'editor' ? 'block' : 'hidden md:block'}`}>
+      <main className={`flex-1 overflow-y-auto ${activeTab === 'ai-copilot' ? 'p-2 sm:p-3 md:p-4 pb-4 md:pb-4 space-y-2' : 'p-3 sm:p-5 md:p-8 pb-28 md:pb-8 space-y-4 md:space-y-5'} bg-[#f8fafc] ${mobileViewMode === 'editor' ? 'block' : 'hidden md:block'}`}>
           
           {/* MOBILE APP SUB-NAVIGATION SEGMENTED BAR */}
           <div className="md:hidden sticky top-0 z-30 bg-[#f8fafc]/95 backdrop-blur-md pt-1 pb-2">

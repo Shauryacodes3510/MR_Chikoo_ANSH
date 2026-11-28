@@ -309,7 +309,7 @@ export default function CopilotPanel({
   const lastUndo = undoStack[undoStack.length - 1];
 
   return (
-    <div className="flex flex-col w-full max-w-3xl mx-auto h-[calc(100dvh-14rem)] md:h-[calc(100dvh-6rem)] min-h-[440px] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div className="flex flex-col w-full h-[calc(100dvh-7.5rem)] md:h-[calc(100dvh-5.5rem)] min-h-[500px] bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-slate-50">
         <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
@@ -445,7 +445,7 @@ export default function CopilotPanel({
       )}
 
       {/* Chat scroll area */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4" role="log" aria-live="polite" aria-label="Copilot conversation">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 md:px-8 py-5 space-y-4 bg-slate-50/40" role="log" aria-live="polite" aria-label="Copilot conversation">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-center gap-4 py-8">
             <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
@@ -476,12 +476,12 @@ export default function CopilotPanel({
         {messages.map(m => (
           <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
-              className={`max-w-[94%] sm:max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed space-y-3 ${
+              className={`max-w-[94%] sm:max-w-[85%] md:max-w-[80%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed space-y-3 ${
                 m.role === 'user'
-                  ? 'bg-indigo-600 text-white rounded-br-md'
+                  ? 'bg-indigo-600 text-white rounded-br-md shadow-xs'
                   : m.role === 'error'
                     ? 'bg-red-50 text-red-900 border border-red-200 rounded-bl-md'
-                    : 'bg-slate-50 text-slate-900 border border-slate-200 rounded-bl-md'
+                    : 'bg-white text-slate-900 border border-slate-200/90 shadow-xs rounded-bl-md'
               }`}
             >
               {/* User Scope label */}
@@ -679,7 +679,7 @@ export default function CopilotPanel({
       </div>
 
       {/* Input area */}
-      <div className="px-3 py-3 border-t border-slate-200 bg-white space-y-2">
+      <div className="px-4 sm:px-6 py-3.5 border-t border-slate-200 bg-white space-y-2.5 shrink-0 shadow-xs">
         {/* Quick prompt chips */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
           <button
