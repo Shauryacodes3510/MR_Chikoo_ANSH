@@ -58,9 +58,12 @@ export const BulkNarrationQueue: React.FC<BulkNarrationQueueProps> = ({
           const narrations = scr.audioNarrations || {};
           const missing: ('english' | 'hinglish' | 'marathi')[] = [];
 
-          if (!narrations.english?.url) missing.push('english');
-          if (!narrations.hinglish?.url) missing.push('hinglish');
-          if (!narrations.marathi?.url) missing.push('marathi');
+          // "Missing" = no audio yet, OR the text changed after the audio was made (status 'stale',
+          // set by AI Copilot). Stale audio is still playable for students; this only queues it for regeneration.
+          const needsAudio = (n: any) => !n?.url || n?.status === 'stale';
+          if (needsAudio(narrations.english)) missing.push('english');
+          if (needsAudio(narrations.hinglish)) missing.push('hinglish');
+          if (needsAudio(narrations.marathi)) missing.push('marathi');
 
           if (missing.length > 0) {
             if (selectedLang === 'all' || missing.includes(selectedLang as any)) {
