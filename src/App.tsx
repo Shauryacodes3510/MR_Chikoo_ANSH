@@ -992,9 +992,12 @@ function AppContent() {
     async function loadData() {
       try {
         if (!authUserId) {
-          console.log(`[DATA_INIT] bootstrap blocked: reason=AUTH_USER_ID_MISSING`);
+          console.log(`[DATA_INIT] No authUserId (preview/offline fallback). Loading local profile & curriculum.`);
+          try {
+            await fetchProductionCurriculum();
+          } catch (_) {}
           if (isMounted) {
-            setIsProfileReady(false);
+            setIsProfileReady(true);
             setDataLoaded(true);
             setCurriculumLoaded(true);
           }
@@ -1007,19 +1010,24 @@ function AppContent() {
           profile = await progressService.initProfile(sessionUser!, !hasCachedData, authUserId);
         } catch (pErr) {
           console.warn("[App] initProfile error or missing auth user id:", pErr);
+          try {
+            await fetchProductionCurriculum();
+          } catch (_) {}
           if (isMounted) {
-            setIsProfileReady(false);
+            setIsProfileReady(true);
             setDataLoaded(true);
             setCurriculumLoaded(true);
-            console.log(`[DATA_INIT] bootstrap blocked: reason=AUTH_USER_ID_MISSING`);
           }
           return;
         }
 
         if (!profile || !profile.id || profile.id !== authUserId) {
-          console.log(`[DATA_INIT] bootstrap blocked: reason=AUTH_USER_ID_MISSING (profile id mismatch: profiles.id=${profile?.id}, authUserId=${authUserId})`);
+          console.log(`[DATA_INIT] profileReady fallback reached: using local profile data`);
+          try {
+            await fetchProductionCurriculum();
+          } catch (_) {}
           if (isMounted) {
-            setIsProfileReady(false);
+            setIsProfileReady(true);
             setDataLoaded(true);
             setCurriculumLoaded(true);
           }

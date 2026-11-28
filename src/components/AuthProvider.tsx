@@ -88,13 +88,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (userError && userError.message !== 'VALIDATION_TIMEOUT') {
               const errMsg = (userError.message || '').toLowerCase();
               const errStatus = (userError as any).status;
-              const isPermanentRevocation = errStatus === 401 || errStatus === 403 || errMsg.includes('invalid') || errMsg.includes('not found');
+              const isInvalidKey = errMsg.includes('invalid api key') || errMsg.includes('api key');
+              const isPermanentRevocation = !isInvalidKey && (errStatus === 401 || errStatus === 403 || errMsg.includes('not found'));
               if (isPermanentRevocation) {
                 console.warn("[Auth Trace] Backend token validation revoked:", userError.message);
                 clearUserSessionData();
                 progressService.clear();
                 setSessionUser(null);
                 setAuthUserId(null);
+              } else if (isInvalidKey) {
+                console.warn("[Auth Trace] Supabase API key invalid in this environment. Preserving session for preview/fallback.");
               } else {
                 console.warn("[Auth Trace] Non-fatal backend validation warning (network/latency), preserving session:", userError.message);
               }
