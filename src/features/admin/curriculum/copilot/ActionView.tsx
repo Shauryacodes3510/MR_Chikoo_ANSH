@@ -3,13 +3,14 @@
  * Apply / Reject / Apply all → save. Undo restores the lessons an Apply touched.
  * Nothing is applied or saved without a click.
  */
-import { useMemo, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import { Loader2, Undo2, Send, Check, X, AlertCircle, Info, CheckCircle2 } from 'lucide-react';
 import { applyOnLists, undoChanges, validateOnLists } from '../../../../lib/copilot/applyToLists';
 import { locateScreen } from '../../../../lib/copilot/lookup';
 import { CopilotClientError, proposeActions } from './api';
 import { newId, useWorkStore, workStore } from './workStore';
 import DiffCard from './DiffCard';
+import ReviewModal from './ReviewModal';
 import type { CopilotContext } from './viewTypes';
 
 const MAX_LEN = 2000;
@@ -24,6 +25,10 @@ export default function ActionView({ ctx }: { ctx: CopilotContext }) {
   const { proposal, actionPending, actionError, notice, undoStack } = useWorkStore();
   const { scope, scopeLabel, displayModules, fullSpace, fullPrac, onCommit } = ctx;
   const [input, setInput] = useState('');
+  const [reviewIdx, setReviewIdx] = useState<number | null>(null);
+
+  // A different proposal (or none) always closes the preview.
+  useEffect(() => { setReviewIdx(null); }, [proposal?.id]);
 
   // Fresh dry run on the data as it is RIGHT NOW (the admin may have edited since the AI answered).
   const dry = useMemo(
@@ -62,6 +67,7 @@ export default function ActionView({ ctx }: { ctx: CopilotContext }) {
       workStore.setNotice({ kind: 'error', text: r.results[0]?.errors[0] || 'Nothing could be applied.' });
       return;
     }
+    setReviewIdx(null);
     onCommit(r.nextSpace, r.nextPrac);
     workStore.pushUndo({
       id: newId('undo'),
@@ -99,6 +105,21 @@ export default function ActionView({ ctx }: { ctx: CopilotContext }) {
       void send(input);
     }
   };
+
+  // Review screen: the screen as it would look after ONLY this action (dry run, nothing saved).
+  const review = useMemo(() => {
+    if (!proposal || reviewIdx === null || !proposal.actions[reviewIdx]) return null;
+    const a = proposal.actions[reviewIdx];
+    const r = validateOnLists(fullSpace, fullPrac, [a], proposal.scope);
+    const proposed = locateScreen([r.nextSpace, r.nextPrac], a.lessonId, a.screenId);
+    const current = locateScreen([fullSpace, fullPrac], a.lessonId, a.screenId);
+    if (!proposed) return null;
+    return {
+      title: `${proposed.lessonTitle || a.lessonId} › screen ${proposed.index + 1}`,
+      proposed: proposed.screen,
+      current: current?.screen ?? null,
+    };
+  }, [proposal, reviewIdx, fullSpace, fullPrac]);
 
   const okIdx = dry ? dry.results.map((r, i) => (r.status === 'ok' ? i : -1)).filter(i => i >= 0) : [];
   const lastUndo = undoStack[undoStack.length - 1];
@@ -192,7 +213,8 @@ export default function ActionView({ ctx }: { ctx: CopilotContext }) {
                 result={r}
                 location={locateScreen([fullSpace, fullPrac], r.action.lessonId, r.action.screenId)}
                 onApply={() => apply([i])}
-                onReject={() => workStore.dropActions([i])}
+                onReject={() => { setReviewIdx(null); workStore.dropActions([i]); }}
+                onReview={() => setReviewIdx(i)}
               />
             ))}
           </section>
@@ -219,6 +241,7 @@ export default function ActionView({ ctx }: { ctx: CopilotContext }) {
         </div>
         <p className="mt-1.5 text-[11px] text-slate-600">A new request replaces the changes still waiting for your decision.</p>
       </div>
+      {review && <ReviewModal title={review.title} proposed={review.proposed} current={review.current} onClose={() => setReviewIdx(null)} />}
     </>
   );
 }
