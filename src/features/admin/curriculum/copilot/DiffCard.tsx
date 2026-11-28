@@ -1,6 +1,6 @@
 /** One proposed change: old vs new, sensitive rows highlighted, Apply / Reject (/ Review). */
 import { AlertTriangle, Check, Eye, X, Volume2 } from 'lucide-react';
-import type { ActionResult } from '../../../../lib/copilot/types';
+import type { ActionResult, DiffEntry } from '../../../../lib/copilot/types';
 import type { ScreenLocation } from '../../../../lib/copilot/lookup';
 
 export const fmt = (v: unknown): string => {
@@ -9,6 +9,32 @@ export const fmt = (v: unknown): string => {
   if (Array.isArray(v)) return v.map(fmt).join('  |  ');
   return JSON.stringify(v);
 };
+
+/** Old vs new rows. Sensitive rows (correct answer, XP, difficulty, media) are highlighted. */
+export function DiffRows({ diff }: { diff: DiffEntry[] }) {
+  return (
+    <ul className="space-y-2">
+      {diff.map(d => (
+        <li key={d.field} className={`rounded-xl border p-2.5 text-xs space-y-1.5 ${d.sensitive ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+          <div className="flex items-center gap-1.5 font-extrabold text-slate-900">
+            {d.field}
+            {d.sensitive && (
+              <span className="flex items-center gap-1 text-[11px] text-amber-900 font-extrabold">
+                <AlertTriangle size={12} aria-hidden="true" /> Sensitive change
+              </span>
+            )}
+          </div>
+          <div className="rounded-lg bg-red-50 text-red-900 border border-red-200 px-2 py-1.5 break-words whitespace-pre-wrap">
+            <span className="font-extrabold">Before: </span>{fmt(d.before)}
+          </div>
+          <div className="rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-200 px-2 py-1.5 break-words whitespace-pre-wrap">
+            <span className="font-extrabold">After: </span>{fmt(d.after)}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 interface Props {
   result: ActionResult;
@@ -41,28 +67,7 @@ export default function DiffCard({ result, location, busy, onApply, onReject, on
 
       {result.action.reason && <p className="text-xs text-slate-700 italic">Why: {result.action.reason}</p>}
 
-      {result.diff.length > 0 && (
-        <ul className="space-y-2">
-          {result.diff.map(d => (
-            <li key={d.field} className={`rounded-xl border p-2.5 text-xs space-y-1.5 ${d.sensitive ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
-              <div className="flex items-center gap-1.5 font-extrabold text-slate-900">
-                {d.field}
-                {d.sensitive && (
-                  <span className="flex items-center gap-1 text-[11px] text-amber-900 font-extrabold">
-                    <AlertTriangle size={12} aria-hidden="true" /> Sensitive change
-                  </span>
-                )}
-              </div>
-              <div className="rounded-lg bg-red-50 text-red-900 border border-red-200 px-2 py-1.5 break-words whitespace-pre-wrap">
-                <span className="font-extrabold">Before: </span>{fmt(d.before)}
-              </div>
-              <div className="rounded-lg bg-emerald-50 text-emerald-900 border border-emerald-200 px-2 py-1.5 break-words whitespace-pre-wrap">
-                <span className="font-extrabold">After: </span>{fmt(d.after)}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      {result.diff.length > 0 && <DiffRows diff={result.diff} />}
 
       {result.errors.map((e, i) => (
         <p key={`e${i}`} className="text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">{e}</p>

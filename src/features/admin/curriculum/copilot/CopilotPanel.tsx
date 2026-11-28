@@ -1,16 +1,17 @@
 /**
  * AI Copilot – panel inside Curriculum Studio.
- * Modes: Ask (read-only chat) · Action (propose → diff → Apply/Reject → Undo).
+ * Modes: Ask (read-only chat) · Action (propose → diff → Apply/Reject → Undo) · Audit (read-only scan + Fix).
  * The shell owns the Unit › Lesson › Screen scope, the audio-outdated banner and the mode switch.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Bot, Trash2, ShieldCheck, MessageSquare, Wand2, Volume2, X } from 'lucide-react';
+import { Bot, Trash2, ShieldCheck, MessageSquare, Wand2, ListChecks, Volume2, X } from 'lucide-react';
 import type { CopilotScope, ModuleLike } from '../../../../lib/copilot/types';
 import { countStaleAudioScreens } from '../../../../lib/copilot/lookup';
 import { chatStore, useChatStore } from './chatStore';
 import { workStore, useWorkStore, type CopilotMode } from './workStore';
 import AskView from './AskView';
 import ActionView from './ActionView';
+import AuditView from './AuditView';
 import type { CopilotContext } from './viewTypes';
 
 interface Props {
@@ -41,6 +42,7 @@ const selectCls =
 const MODES: { id: CopilotMode; label: string; icon: typeof MessageSquare; hint: string }[] = [
   { id: 'ask', label: 'Ask', icon: MessageSquare, hint: 'Ask mode · read-only, nothing is changed' },
   { id: 'action', label: 'Action', icon: Wand2, hint: 'Action mode · you approve every change' },
+  { id: 'audit', label: 'Audit', icon: ListChecks, hint: 'Audit mode · read-only scan, you decide what to fix' },
 ];
 
 export default function CopilotPanel({
@@ -48,7 +50,7 @@ export default function CopilotPanel({
   selectedModuleId, selectedLessonId, onCommit, onOpenAudioQueue,
 }: Props) {
   const { messages, pending } = useChatStore();
-  const { mode, actionPending } = useWorkStore();
+  const { mode, actionPending, auditPending } = useWorkStore();
   const [audioBannerHidden, setAudioBannerHidden] = useState(false);
 
   const units = useMemo(
@@ -110,7 +112,7 @@ export default function CopilotPanel({
   };
 
   const current = MODES.find(m => m.id === mode) ?? MODES[0];
-  const busy = pending || actionPending;
+  const busy = pending || actionPending || auditPending;
 
   return (
     <div className="flex flex-col w-full max-w-3xl mx-auto h-[calc(100dvh-14rem)] md:h-[calc(100dvh-6rem)] min-h-[420px] bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -214,7 +216,7 @@ export default function CopilotPanel({
         </div>
       )}
 
-      {mode === 'ask' ? <AskView ctx={ctx} /> : <ActionView ctx={ctx} />}
+      {mode === 'ask' ? <AskView ctx={ctx} /> : mode === 'action' ? <ActionView ctx={ctx} /> : <AuditView ctx={ctx} />}
     </div>
   );
 }
