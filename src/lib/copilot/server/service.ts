@@ -249,7 +249,7 @@ export const runChat = async (
   const user = `CURRICULUM (selected scope):\n${contextJson}\n\n${history ? `CHAT SO FAR:\n${history}\n\n` : ''}ADMIN MESSAGE:\n${message}`;
 
   // Direct keyword short-circuit for explicit audit commands to ensure 100% reliable audit triggering
-  const isAuditIntent = /^\s*(audit|check\s+(all\s+)?answers|scan\s+(for\s+)?errors|find\s+mistakes|sare\s+answers\s+check)\b/i.test(message);
+  const isAuditIntent = /^\s*(audit|check\s+(all\s+)?(answers|screens|lessons?|questions?)|scan\s+(for\s+)?(errors|mistakes)|find\s+(errors|mistakes)|(sare\s+)?(answers|questions|lessons?)\s+check|galti(yan)?\s+(check|dhundo|nikalo))\b/i.test(message);
   if (isAuditIntent) {
     const auditRes = await runAudit(llm, { modules: input.modules, scope: input.scope });
     const reply = auditRes.findings.length > 0
