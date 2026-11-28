@@ -66,13 +66,85 @@ export const toAiScreenView = (screen: ScreenLike): AiScreenView => {
     };
   }
   if (screen.type === 'content_screen' || screen.type === 'visual_lesson_screen') {
-    const cs = isPlainObject(screen.contentScreen) ? screen.contentScreen : screen;
+    const cs = isPlainObject(screen.contentScreen) ? screen.contentScreen : {};
+    const vs = isPlainObject(screen.visualLessonScreen) ? screen.visualLessonScreen : {};
+    const merged: Record<string, any> = { ...screen, ...vs, ...cs };
+    const heading = merged.heading || screen.question || screen.title || '';
+    const contentBody = merged.contentBody || merged.explanation || screen.explanation || '';
+    const subheading = merged.subheading || '';
+    const badge = merged.badge || '';
+    const quote = merged.quote || '';
+    const bottomMessage = merged.bottomMessage || '';
+    const mascotMessage = merged.mascotMessage || screen.mascotMessage || '';
     return {
       ...base,
-      ...pick(cs, ['heading', 'subheading', 'contentBody', 'badge', 'quote', 'bottomMessage', 'mascotMessage']),
+      heading,
+      contentBody,
+      ...(subheading ? { subheading } : {}),
+      ...(badge ? { badge } : {}),
+      ...(quote ? { quote } : {}),
+      ...(bottomMessage ? { bottomMessage } : {}),
+      ...(mascotMessage ? { mascotMessage } : {}),
     };
   }
-  // Story screens, visual screens, and all other challenge types:
+  if (screen.type === 'comic_story') {
+    const story = (isPlainObject(screen.comicStory) ? screen.comicStory : screen) as Record<string, any>;
+    return {
+      ...base,
+      title: story.title || screen.question || '',
+      panels: (sanitize(story.panels) as any[]) || [],
+      takeaway: story.takeaway || screen.explanation || '',
+    };
+  }
+  if (screen.type === 'visual_analogy') {
+    const va = (isPlainObject(screen.visualAnalogy) ? screen.visualAnalogy : screen) as Record<string, any>;
+    return {
+      ...base,
+      title: va.analogyTitle || screen.question || '',
+      conceptLeft: va.conceptLeft || '',
+      conceptRight: va.conceptRight || '',
+      explanationLeft: va.explanationLeft || '',
+      explanationRight: va.explanationRight || '',
+      mainExplanation: va.mainExplanation || screen.explanation || '',
+    };
+  }
+  if (screen.type === 'student_story') {
+    const ss = (isPlainObject(screen.studentStory) ? screen.studentStory : screen) as Record<string, any>;
+    return {
+      ...base,
+      studentName: ss.studentName || '',
+      scenario: ss.scenario || screen.question || '',
+      outcome: ss.outcome || '',
+      quote: ss.quote || screen.explanation || '',
+    };
+  }
+  if (screen.type === 'image_explainer') {
+    const ie = (isPlainObject(screen.imageExplainer) ? screen.imageExplainer : screen) as Record<string, any>;
+    return {
+      ...base,
+      title: ie.title || screen.question || '',
+      text: ie.text || screen.explanation || '',
+      caption: ie.caption || '',
+    };
+  }
+  if (screen.type === 'fun_fact') {
+    const ff = (isPlainObject(screen.funFact) ? screen.funFact : screen) as Record<string, any>;
+    return {
+      ...base,
+      headline: ff.headline || screen.question || '',
+      text: ff.text || screen.explanation || '',
+      triviaSource: ff.triviaSource || '',
+    };
+  }
+  if (screen.type === 'meme_screen') {
+    const ms = (isPlainObject(screen.memeScreen) ? screen.memeScreen : screen) as Record<string, any>;
+    return {
+      ...base,
+      title: ms.title || screen.question || '',
+      explanation: ms.explanation || screen.explanation || '',
+    };
+  }
+  // All other challenge types:
   // AI gets the real data (dialogues, scenes, panels, options, answers, pairs...),
   // minus audio/hash/mirror fields.
   const { id: _id, type: _type, ...rest } = screen;

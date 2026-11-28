@@ -2521,13 +2521,16 @@ ${QUALITY_STANDARDS}`;
 var ASK_SYSTEM = `${COMMON}
 MODE: ASK (read-only). Answer the admin's question about the selected screen/lesson/unit in plain text.
 You cannot change anything in this mode. Never output JSON actions.
-When asked to evaluate, review, critique, or analyze a lesson/screen, use the MASTER QUALITY STANDARDS above:
-- Check for spelling, grammar, and punctuation issues.
-- Check if vocabulary is too difficult or confusing for kids aged 8\u201314.
-- Check if the correct answer is factually right and whether distractors are balanced in length and quality.
-- Check if real-world examples (YouTube, gaming, phones) could make the screen more relatable.
-Screens of types other than multiple choice / true-false are shown with their real fields (options, pairs, correctAnswer, items). Look for the answer inside whatever fields the screen has before saying something is missing.
-If something really is missing, name the exact screen id and type and list which fields you do see.
+
+MANDATORY FOR LESSON & UNIT REVIEWS:
+Lessons in Mr Chikoo ALWAYS begin with Story, Visual, or Content screens (types: content_screen, visual_lesson_screen, comic_story, visual_analogy, student_story, image_explainer, fun_fact, meme_screen).
+When asked to review, analyze, or explain a lesson or unit, YOU MUST NOT SKIP THE STORY OR CONTENT SCREENS!
+You MUST inspect and comment on the story and content screens:
+- Check story dialogues, scenarios, and concept narrative for kid-friendliness (ages 8\u201314), tone, spelling, and clarity.
+- Check whether visual analogies and concept intros explain the concept well before questions start.
+- Then evaluate the questions, MCQs, and options according to the MASTER QUALITY STANDARDS.
+
+Screens of types other than multiple choice / true-false are shown with their real fields (heading, contentBody, panels, dialogues, scenario, analogyTitle, options, pairs, correctAnswer). Look for the content inside whatever fields the screen has before saying something is missing.
 Be short, concrete, and helpful. Mention screen ids when you refer to a screen.`;
 var ACTION_SYSTEM = `${COMMON}
 MODE: ACTION. Turn the admin's request into edits and return ONLY valid JSON, no markdown:
@@ -2545,16 +2548,20 @@ Rules:
 - When rewriting text or options, apply MASTER QUALITY STANDARDS: keep vocabulary friendly for 8\u201314 year olds, balance option lengths, use relatable examples, and maintain perfect spelling and grammar.
 - Use only lessonId/screenId values that appear in the data. If nothing can be done, return {"actions":[],"message":"<why>"}.`;
 var AUDIT_SYSTEM = `${COMMON}
-MODE: AUDIT (read-only). Perform a comprehensive curriculum quality audit across ALL screens (MCQs, Content screens, Story scenes, Visual explainers) according to the MASTER QUALITY STANDARDS:
-Check for:
-1. Factually wrong marked answer (correctOptionIndex) or missing/null answer in questions.
-2. Multiple options that could be correct, or ambiguous questions.
-3. Explanation contradicting the marked answer.
-4. Spelling errors, typos, grammatical mistakes, or missing question marks in ANY screen (content, story dialogues, questions).
-5. Overly complex, academic, or confusing English vocabulary not suited for 8\u201314 year old kids.
-6. Severe "longest option bias" where the correct answer is obviously longer than all distractors.
-7. Silly or unhelpful distractors that don't test real understanding.
-8. Weak, confusing, or boring story dialogues or content body text.
+MODE: AUDIT (read-only). Perform a comprehensive curriculum quality audit across ALL screens (Story scenes, Visual explainers, Content screens, and MCQs) according to the MASTER QUALITY STANDARDS:
+
+MANDATORY AUDIT SCOPE - AUDIT ALL SCREEN TYPES:
+1. Story & Visual screens (comic_story, visual_analogy, student_story, image_explainer, fun_fact, meme_screen):
+   - Check character dialogues, story panels, scenario text, analogies, and takeaways for spelling/grammar errors, age-inappropriate English vocabulary, or confusing explanations.
+2. Content screens (content_screen, visual_lesson_screen):
+   - Check heading, subheading, contentBody, quote, and mascotMessage for spelling/grammar and vocabulary difficulty (8\u201314 years).
+   - Provide a ready "fix" payload using action "updateContentScreen".
+3. Question & Quiz screens (c1_multiple_choice, c9_true_false, etc.):
+   - Check factually wrong marked answer (correctOptionIndex) or missing/null answer.
+   - Check multiple options that could be correct, or ambiguous questions.
+   - Check explanation contradicting the marked answer.
+   - Check severe "longest option bias" and distractor believability.
+   - Provide a ready "fix" payload using action "updateMcq".
 
 Return ONLY valid JSON, no markdown:
 {"findings":[{"lessonId":"<id>","screenId":"<id>","severity":"error|warning","problem":"<what is wrong>","why":"<why it is an issue for students>","fix":{"fields":{...}}}]}
@@ -2570,9 +2577,9 @@ MODE: UNIFIED CHAT. You are the all-in-one AI Copilot. You can answer questions 
 Analyze the admin's message and recent chat history to determine intent:
 
 1. INTENT "audit":
-When the admin asks to check, inspect, audit, or verify lessons or answers (e.g. "audit this lesson", "check all answers", "find errors", "sare answers check karo", "koi galti hai kya"):
+When the admin asks to check, inspect, audit, verify, scan, or find errors/mistakes across screens, lessons, or units (e.g. "audit this lesson", "check all screens for mistakes", "check all the screen for mistakes", "find errors", "sare answers check karo", "koi galti hai kya", "mistakes dhundo", "sab check karo"):
 Return ONLY valid JSON:
-{"intent":"audit","reply":"I am auditing the screens for content errors, spelling/grammar, vocabulary difficulty, and distractor quality."}
+{"intent":"audit","reply":"I am auditing all screens (including story, visual, content, and quiz screens) for content errors, spelling/grammar, vocabulary difficulty, and distractor quality."}
 
 2. INTENT "action":
 When the admin asks to change, update, fix, simplify, or edit content of editable screens (MCQs, True/False, or Content screens):
@@ -2586,11 +2593,10 @@ Rules for actions:
 - If the screen is not editable or nothing can be done, return {"intent":"ask","reply":"<explain why it cannot be changed>"}
 
 3. INTENT "ask":
-For any general questions, explanations, brainstorming, or when the admin asks you to review/critique/analyze a lesson:
-Evaluate the lesson or question thoroughly against the MASTER QUALITY STANDARDS (accuracy, vocabulary level for 8\u201314 year olds, option length balance, distractor realism, and real-world relatability).
+For general informational questions, concept explanations, brainstorming, or overview questions (e.g. "what is this unit about?", "explain how machine learning is taught here", "what are the concepts in lesson 2?"):
+Always inspect story screens, visual explainers, and content screens alongside questions when summarizing.
 Return valid JSON:
-{"intent":"ask","reply":"<your helpful, friendly response in plain text or markdown>"}
-Screens of types other than multiple choice / true-false are shown with their real fields (options, pairs, correctAnswer, items). Look inside whatever fields the screen has before saying something is missing.`;
+{"intent":"ask","reply":"<your helpful, friendly response in plain text or markdown>"}`;
 
 // src/lib/copilot/server/context.ts
 var MAX_CONTEXT_CHARS = 12e4;
@@ -2634,10 +2640,82 @@ var toAiScreenView = (screen) => {
     };
   }
   if (screen.type === "content_screen" || screen.type === "visual_lesson_screen") {
-    const cs = isPlainObject(screen.contentScreen) ? screen.contentScreen : screen;
+    const cs = isPlainObject(screen.contentScreen) ? screen.contentScreen : {};
+    const vs = isPlainObject(screen.visualLessonScreen) ? screen.visualLessonScreen : {};
+    const merged = { ...screen, ...vs, ...cs };
+    const heading = merged.heading || screen.question || screen.title || "";
+    const contentBody = merged.contentBody || merged.explanation || screen.explanation || "";
+    const subheading = merged.subheading || "";
+    const badge = merged.badge || "";
+    const quote = merged.quote || "";
+    const bottomMessage = merged.bottomMessage || "";
+    const mascotMessage = merged.mascotMessage || screen.mascotMessage || "";
     return {
       ...base,
-      ...pick(cs, ["heading", "subheading", "contentBody", "badge", "quote", "bottomMessage", "mascotMessage"])
+      heading,
+      contentBody,
+      ...subheading ? { subheading } : {},
+      ...badge ? { badge } : {},
+      ...quote ? { quote } : {},
+      ...bottomMessage ? { bottomMessage } : {},
+      ...mascotMessage ? { mascotMessage } : {}
+    };
+  }
+  if (screen.type === "comic_story") {
+    const story = isPlainObject(screen.comicStory) ? screen.comicStory : screen;
+    return {
+      ...base,
+      title: story.title || screen.question || "",
+      panels: sanitize(story.panels) || [],
+      takeaway: story.takeaway || screen.explanation || ""
+    };
+  }
+  if (screen.type === "visual_analogy") {
+    const va = isPlainObject(screen.visualAnalogy) ? screen.visualAnalogy : screen;
+    return {
+      ...base,
+      title: va.analogyTitle || screen.question || "",
+      conceptLeft: va.conceptLeft || "",
+      conceptRight: va.conceptRight || "",
+      explanationLeft: va.explanationLeft || "",
+      explanationRight: va.explanationRight || "",
+      mainExplanation: va.mainExplanation || screen.explanation || ""
+    };
+  }
+  if (screen.type === "student_story") {
+    const ss = isPlainObject(screen.studentStory) ? screen.studentStory : screen;
+    return {
+      ...base,
+      studentName: ss.studentName || "",
+      scenario: ss.scenario || screen.question || "",
+      outcome: ss.outcome || "",
+      quote: ss.quote || screen.explanation || ""
+    };
+  }
+  if (screen.type === "image_explainer") {
+    const ie = isPlainObject(screen.imageExplainer) ? screen.imageExplainer : screen;
+    return {
+      ...base,
+      title: ie.title || screen.question || "",
+      text: ie.text || screen.explanation || "",
+      caption: ie.caption || ""
+    };
+  }
+  if (screen.type === "fun_fact") {
+    const ff = isPlainObject(screen.funFact) ? screen.funFact : screen;
+    return {
+      ...base,
+      headline: ff.headline || screen.question || "",
+      text: ff.text || screen.explanation || "",
+      triviaSource: ff.triviaSource || ""
+    };
+  }
+  if (screen.type === "meme_screen") {
+    const ms = isPlainObject(screen.memeScreen) ? screen.memeScreen : screen;
+    return {
+      ...base,
+      title: ms.title || screen.question || "",
+      explanation: ms.explanation || screen.explanation || ""
     };
   }
   const { id: _id, type: _type, ...rest } = screen;
@@ -2854,6 +2932,16 @@ ${payload}`, json: true });
   }
   return { findings, scanned: items.length, skippedUnsupported: skipped, batchErrors };
 };
+var isAuditMessage = (msg) => {
+  const m = msg.toLowerCase().trim();
+  if (/\b(audit|scan)\b/i.test(m)) return true;
+  if (/\b(check|find|look\s+for|spot)\b.*?\b(all|every|screens?|lessons?|unit|mistakes?|errors?|answers?|problems?|typos?)\b/i.test(m)) return true;
+  if (/\b(mistakes?|errors?|bugs?|typos?)\b.*?\b(check|find|look|spot|verify)\b/i.test(m)) return true;
+  if (/\b(galti(yan)?|mistake(s)?|kamiyan)\b/i.test(m) && /\b(check|dhundo|dekho|batao|nikalo|find)\b/i.test(m)) return true;
+  if (/\b(sab|sare|saare|pura|poora)\b.*?\b(check|audit|dekho|scan)\b/i.test(m)) return true;
+  if (/\b(screens?|lessons?|questions?|sawal)\b.*?\b(check|audit)\b/i.test(m)) return true;
+  return false;
+};
 var runChat = async (llm, input) => {
   const { scope, scoped, contextJson } = prepare(input.modules, input.scope);
   const message = cleanText(input.message, "message");
@@ -2866,7 +2954,7 @@ ${history}
 
 ` : ""}ADMIN MESSAGE:
 ${message}`;
-  const isAuditIntent = /^\s*(audit|check\s+(all\s+)?(answers|screens|lessons?|questions?)|scan\s+(for\s+)?(errors|mistakes)|find\s+(errors|mistakes)|(sare\s+)?(answers|questions|lessons?)\s+check|galti(yan)?\s+(check|dhundo|nikalo))\b/i.test(message);
+  const isAuditIntent = isAuditMessage(message);
   if (isAuditIntent) {
     const auditRes = await runAudit(llm, { modules: input.modules, scope: input.scope });
     const reply2 = auditRes.findings.length > 0 ? `Audit complete for ${scope.kind}: found ${auditRes.findings.length} potential issue(s). Review each finding below or click "Fix" to apply changes.` : `Audit complete for ${scope.kind}: scanned ${auditRes.scanned} screen(s). All answers and content verified correct!`;

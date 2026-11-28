@@ -237,6 +237,19 @@ export interface ChatResponse {
   retried?: boolean;
 }
 
+export const isAuditMessage = (msg: string): boolean => {
+  const m = msg.toLowerCase().trim();
+  // English audit patterns
+  if (/\b(audit|scan)\b/i.test(m)) return true;
+  if (/\b(check|find|look\s+for|spot)\b.*?\b(all|every|screens?|lessons?|unit|mistakes?|errors?|answers?|problems?|typos?)\b/i.test(m)) return true;
+  if (/\b(mistakes?|errors?|bugs?|typos?)\b.*?\b(check|find|look|spot|verify)\b/i.test(m)) return true;
+  // Hinglish / Hindi audit patterns
+  if (/\b(galti(yan)?|mistake(s)?|kamiyan)\b/i.test(m) && /\b(check|dhundo|dekho|batao|nikalo|find)\b/i.test(m)) return true;
+  if (/\b(sab|sare|saare|pura|poora)\b.*?\b(check|audit|dekho|scan)\b/i.test(m)) return true;
+  if (/\b(screens?|lessons?|questions?|sawal)\b.*?\b(check|audit)\b/i.test(m)) return true;
+  return false;
+};
+
 export const runChat = async (
   llm: LlmAdapter,
   input: { modules: unknown; scope: unknown; message: unknown; history?: unknown },
@@ -248,8 +261,8 @@ export const runChat = async (
     .join('\n');
   const user = `CURRICULUM (selected scope):\n${contextJson}\n\n${history ? `CHAT SO FAR:\n${history}\n\n` : ''}ADMIN MESSAGE:\n${message}`;
 
-  // Direct keyword short-circuit for explicit audit commands to ensure 100% reliable audit triggering
-  const isAuditIntent = /^\s*(audit|check\s+(all\s+)?(answers|screens|lessons?|questions?)|scan\s+(for\s+)?(errors|mistakes)|find\s+(errors|mistakes)|(sare\s+)?(answers|questions|lessons?)\s+check|galti(yan)?\s+(check|dhundo|nikalo))\b/i.test(message);
+  // Direct keyword short-circuit for audit commands to ensure 100% reliable audit triggering
+  const isAuditIntent = isAuditMessage(message);
   if (isAuditIntent) {
     const auditRes = await runAudit(llm, { modules: input.modules, scope: input.scope });
     const reply = auditRes.findings.length > 0
