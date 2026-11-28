@@ -61,7 +61,7 @@ export default function BottomCTA() {
 
           <div className="flex flex-wrap items-center gap-4 mb-8">
             <a
-              href="https://learn.mrchikoo.com"
+              href="https://learn.mrchikoo.com/signup"
               className="px-8 py-3.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-base flex items-center gap-2 shadow-lg hover:shadow-blue-500/40 transition-all hover:scale-105 active:scale-95 cursor-pointer"
             >
               Start Web App

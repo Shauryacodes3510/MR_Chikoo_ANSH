@@ -2938,24 +2938,24 @@ function AppContent() {
                 if (!showAuthView && hasLocalUserCache) {
                   navigateTo('/app');
                 } else {
-                  navigateTo('/login');
+                  navigateTo('/signup');
                 }
               } else {
-                window.location.href = 'https://learn.mrchikoo.com';
+                window.location.href = 'https://learn.mrchikoo.com/signup';
               }
             }}
             onSignIn={() => {
               if (isLearnDomain) {
                 navigateTo('/login');
               } else {
-                window.location.href = 'https://learn.mrchikoo.com';
+                window.location.href = 'https://learn.mrchikoo.com/login';
               }
             }}
             onContinueToApp={() => {
               if (isLearnDomain) {
                 navigateTo('/app');
               } else {
-                window.location.href = 'https://learn.mrchikoo.com';
+                window.location.href = 'https://learn.mrchikoo.com/app';
               }
             }}
             isAuthenticated={!showAuthView && !isCheckingUserStatus && !!sessionUser}
@@ -2983,6 +2983,7 @@ function AppContent() {
           <div className="fixed inset-0 w-full h-full bg-slate-900 overflow-y-auto">
             <Suspense fallback={<div className="fixed inset-0 bg-slate-950" />}>
               <AuthScreen 
+                key={cleanPath}
                 initialMode={cleanPath === '/login' ? 'login' : 'signup'}
                 onLoginSuccess={(email, isNew) => {
                   handleLoginSuccess(email, isNew);
@@ -3073,6 +3074,7 @@ function AppContent() {
       ) : showAuthView ? (
         <Suspense fallback={<ChikooReachingLoader fullScreen={true} />}>
           <AuthScreen 
+            initialMode={cleanPath === '/login' ? 'login' : 'signup'}
             onLoginSuccess={handleLoginSuccess} 
             onboardingEmail={sessionUser || undefined}
           />

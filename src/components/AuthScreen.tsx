@@ -51,6 +51,12 @@ export default function AuthScreen({ onLoginSuccess, onboardingEmail, initialMod
     return 'signup';
   });
 
+  useEffect(() => {
+    if (initialMode && !onboardingEmail) {
+      setFlowMode(initialMode);
+    }
+  }, [initialMode, onboardingEmail]);
+
   // Onboarding steps: 1 = Name, 2 = School, 3 = Grade, 4 = Learning Style, 5 = Ready/Success
   const [onboardingStep, setOnboardingStep] = useState<number>(1);
   const [isLoading, setIsLoading] = useState<boolean>(false);

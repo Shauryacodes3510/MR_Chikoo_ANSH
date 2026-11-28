@@ -92,7 +92,7 @@ export default function Hero() {
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 mb-12 w-full sm:w-auto">
             <a
-              href="https://learn.mrchikoo.com"
+              href="https://learn.mrchikoo.com/signup"
               className="w-full sm:w-auto px-8 py-4 rounded-full bg-chikoo-blue text-white font-medium text-lg flex items-center justify-center gap-2 hover:bg-chikoo-blue-dark transition-all hover:shadow-xl hover:shadow-chikoo-blue/30 active:scale-95 group cursor-pointer"
             >
               Start Learning Now

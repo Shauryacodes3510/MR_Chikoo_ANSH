@@ -95,7 +95,7 @@ export const DesktopLandingPage = memo(function DesktopLandingPage({
         onStartAdventure();
       }
     } else {
-      window.location.href = 'https://learn.mrchikoo.com';
+      window.location.href = 'https://learn.mrchikoo.com/signup';
     }
   }, [isAuthenticated, onContinueToApp, onStartAdventure]);
 
